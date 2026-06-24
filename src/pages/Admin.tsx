@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -1105,7 +1105,6 @@ export default function Admin() {
   const [tab, setTab] = useState<Tab>('clients');
   const [configDbs, setConfigDbs] = useState<ConfigDB[]>([]);
   const [allClients, setAllClients] = useState<{ id: number; name: string }[]>([]);
-  const navigate = useNavigate();
   const location = useLocation();
   const fromWorkPanel = new URLSearchParams(location.search).get('from') === 'work-panel';
 
@@ -1136,10 +1135,13 @@ export default function Admin() {
   }, [authInfo]);
 
   const logout = () => {
+    if (fromWorkPanel) {
+      window.location.href = '/work-panel';
+      return;
+    }
     localStorage.removeItem(TOKEN_KEY);
     setAuthInfo(null);
     setTab('clients');
-    if (fromWorkPanel) navigate('/work-panel');
   };
 
   if (!authInfo) return <AdminLogin onLogin={handleLogin} />;
