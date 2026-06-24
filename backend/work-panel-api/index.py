@@ -192,6 +192,7 @@ def handler(event: dict, context) -> dict:
                     SELECT
                         cd.id AS client_db_id,
                         c.id AS client_id,
+                        c.parent_id AS client_parent_id,
                         c.name AS client_name,
                         db.id AS config_db_id,
                         db.config_name,
@@ -211,7 +212,7 @@ def handler(event: dict, context) -> dict:
                         )
                     LEFT JOIN {SCHEMA}.admin_users au ON au.id = uh.updated_by_user_id
                     {where_sql}
-                    ORDER BY c.name, db.config_name
+                    ORDER BY COALESCE(c.parent_id, c.id), c.parent_id NULLS FIRST, c.name, db.config_name
                 """)
                 return ok([dict(r) for r in cur.fetchall()])
 

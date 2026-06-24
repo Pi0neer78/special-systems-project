@@ -39,7 +39,7 @@ interface Credential {
   login3: string; password3: string; ip: string; notes: string;
 }
 interface UpdateRow {
-  client_db_id: number; client_id: number; client_name: string;
+  client_db_id: number; client_id: number; client_parent_id: number | null; client_name: string;
   config_db_id: number; config_name: string;
   current_config_version: string | null; actual_config_version: string | null;
   update_date: string | null; updated_by_name: string | null; updated_by_login: string | null;
@@ -510,11 +510,24 @@ function UpdatesSection() {
           </tr>
         </thead>
         <tbody>
-          {rows.map(row => {
+          {rows.map((row, idx) => {
             const outdated = versionGt(row.actual_config_version, row.current_config_version);
+            const isChild = !!row.client_parent_id;
+            const prevRow = rows[idx - 1];
+            const isFirstInGroup = idx === 0 || prevRow.client_id !== row.client_id;
+            const isParentRow = !isChild && isFirstInGroup && idx > 0;
             return (
-              <tr key={row.client_db_id} className={`border-b border-border/50 transition-colors ${outdated ? 'bg-yellow-500/8 hover:bg-yellow-500/12' : 'hover:bg-secondary/30'}`}>
-                <td className="px-3 py-2.5 font-medium">{row.client_name}</td>
+              <tr key={row.client_db_id} className={`border-b border-border/50 transition-colors ${outdated ? 'bg-yellow-500/8 hover:bg-yellow-500/12' : 'hover:bg-secondary/30'} ${isParentRow ? 'border-t-2 border-t-border' : ''}`}>
+                <td className="px-3 py-2.5">
+                  {isChild ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="text-border shrink-0 ml-2">└</span>
+                      <span className="text-muted-foreground">{row.client_name}</span>
+                    </span>
+                  ) : (
+                    <span className="font-medium">{row.client_name}</span>
+                  )}
+                </td>
                 <td className="px-3 py-2.5 text-muted-foreground">{row.config_name}</td>
                 <td className={`px-3 py-2.5 font-mono text-sm ${outdated ? 'text-yellow-400 font-semibold' : ''}`}>
                   {row.current_config_version || <span className="text-muted-foreground">—</span>}
