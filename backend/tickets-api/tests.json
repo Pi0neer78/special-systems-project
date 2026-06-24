@@ -18,6 +18,19 @@
       "method": "GET",
       "path": "/?resource=tickets",
       "expectedStatus": 401
+    },
+    {
+      "name": "Неверный логин сотрудника",
+      "method": "POST",
+      "path": "/?resource=staff-login",
+      "body": {"login": "noone", "password": "wrong"},
+      "expectedStatus": 401
+    },
+    {
+      "name": "Справочники без токена",
+      "method": "GET",
+      "path": "/?resource=ticket-meta",
+      "expectedStatus": 401
     }
   ]
 }
