@@ -1,13 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 
 const TICKETS_URL = 'https://functions.poehali.dev/4866cc97-c798-42d4-a280-d35071d704a8';
 const CLIENT_TOKEN_KEY = 'client_token';
+const SPLIT_WIDTH_KEY = 'pa_split_width';
+const DEFAULT_SPLIT = 50;
 
 const PRIORITY_LABELS: Record<string, { label: string; color: string }> = {
   low:    { label: 'Низкий',  color: 'text-muted-foreground' },
@@ -53,8 +55,29 @@ type Ticket = {
   assignee_name: string | null;
 };
 
+type UpdateRow = {
+  client_db_id: number;
+  config_name: string;
+  current_config_version: string | null;
+  actual_config_version: string | null;
+  update_date: string | null;
+  updated_by_name: string | null;
+  updated_by_login: string | null;
+};
+
 function isOverdue(t: Ticket) {
   return !t.resolved_at && t.deadline && new Date(t.deadline) < new Date();
+}
+
+function versionGt(a: string | null, b: string | null) {
+  if (!a || !b) return false;
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] || 0) - (pb[i] || 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return false;
 }
 
 // ─── Форма новой заявки ──────────────────────────────────────────────────────
@@ -63,7 +86,6 @@ function NewTicketForm({ token, onCreated, onClose }: { token: string; onCreated
   const [form, setForm] = useState({ priority: 'medium', problem_type: PROBLEM_TYPES[0], description: '', deadline: '', extra_info: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }));
 
   const submit = async (e: React.FormEvent) => {
@@ -106,13 +128,11 @@ function NewTicketForm({ token, onCreated, onClose }: { token: string; onCreated
       </div>
       <div>
         <label className="text-xs text-muted-foreground mb-1 block">Описание проблемы <span className="text-destructive">*</span></label>
-        <Textarea value={form.description} onChange={e => set('description', e.target.value)} required rows={4}
-          className="bg-secondary/40 border-border resize-none" />
+        <Textarea value={form.description} onChange={e => set('description', e.target.value)} required rows={4} className="bg-secondary/40 border-border resize-none" />
       </div>
       <div>
         <label className="text-xs text-muted-foreground mb-1 block">Дополнительная информация</label>
-        <Textarea value={form.extra_info} onChange={e => set('extra_info', e.target.value)} rows={2}
-          className="bg-secondary/40 border-border resize-none" />
+        <Textarea value={form.extra_info} onChange={e => set('extra_info', e.target.value)} rows={2} className="bg-secondary/40 border-border resize-none" />
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <div className="flex gap-3 pt-1">
@@ -135,25 +155,15 @@ function TicketDetail({ ticket, onClose }: { ticket: Ticket; onClose: () => void
   return (
     <div className="space-y-4 text-sm">
       <div className="flex items-center gap-3 flex-wrap">
-        <span className={`flex items-center gap-1.5 font-medium ${st.color}`}>
-          <Icon name={st.icon} size={14} /> {st.label}
-        </span>
+        <span className={`flex items-center gap-1.5 font-medium ${st.color}`}><Icon name={st.icon} size={14} /> {st.label}</span>
         <span className={`font-medium ${pr.color}`}>{pr.label}</span>
         {overdue && <span className="text-red-500 font-bold text-xs">⚠ Просрочена</span>}
       </div>
       <div className="grid grid-cols-2 gap-2 text-xs">
         <div><span className="text-muted-foreground">Подана:</span> {new Date(ticket.submitted_at).toLocaleString('ru')}</div>
         <div><span className="text-muted-foreground">Тип:</span> {ticket.problem_type}</div>
-        {ticket.deadline && (
-          <div><span className="text-muted-foreground">Решить до:</span>{' '}
-            <span className={overdue ? 'text-red-400 font-semibold' : ''}>{new Date(ticket.deadline).toLocaleString('ru')}</span>
-          </div>
-        )}
-        {ticket.resolved_at && (
-          <div><span className="text-muted-foreground">Решена:</span>{' '}
-            <span className="text-green-400">{new Date(ticket.resolved_at).toLocaleString('ru')}</span>
-          </div>
-        )}
+        {ticket.deadline && <div><span className="text-muted-foreground">Решить до:</span> <span className={overdue ? 'text-red-400 font-semibold' : ''}>{new Date(ticket.deadline).toLocaleString('ru')}</span></div>}
+        {ticket.resolved_at && <div><span className="text-muted-foreground">Решена:</span> <span className="text-green-400">{new Date(ticket.resolved_at).toLocaleString('ru')}</span></div>}
         {ticket.assignee_name && <div><span className="text-muted-foreground">Ответственный:</span> {ticket.assignee_name}</div>}
         <div><span className="text-muted-foreground">Статус изменён:</span> {new Date(ticket.status_changed_at).toLocaleString('ru')}</div>
       </div>
@@ -161,19 +171,182 @@ function TicketDetail({ ticket, onClose }: { ticket: Ticket; onClose: () => void
         <p className="text-xs text-muted-foreground mb-1">Описание:</p>
         <p className="bg-secondary/30 rounded-md p-3 whitespace-pre-wrap">{ticket.description}</p>
       </div>
-      {ticket.extra_info && (
-        <div>
-          <p className="text-xs text-muted-foreground mb-1">Дополнительная информация:</p>
-          <p className="bg-secondary/30 rounded-md p-3 whitespace-pre-wrap">{ticket.extra_info}</p>
-        </div>
-      )}
-      {ticket.result && (
-        <div>
-          <p className="text-xs text-muted-foreground mb-1">Результат:</p>
-          <p className="bg-green-500/10 border border-green-500/20 rounded-md p-3 whitespace-pre-wrap text-green-300">{ticket.result}</p>
-        </div>
-      )}
+      {ticket.extra_info && <div><p className="text-xs text-muted-foreground mb-1">Дополнительная информация:</p><p className="bg-secondary/30 rounded-md p-3 whitespace-pre-wrap">{ticket.extra_info}</p></div>}
+      {ticket.result && <div><p className="text-xs text-muted-foreground mb-1">Результат:</p><p className="bg-green-500/10 border border-green-500/20 rounded-md p-3 whitespace-pre-wrap text-green-300">{ticket.result}</p></div>}
       <Button variant="outline" onClick={onClose} className="w-full">Закрыть</Button>
+    </div>
+  );
+}
+
+// ─── Список заявок ───────────────────────────────────────────────────────────
+
+function TicketsPanel({ token, onNewClick }: { token: string; onNewClick: () => void }) {
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [detailTicket, setDetailTicket] = useState<Ticket | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const data = await fetch(`${TICKETS_URL}?resource=tickets`, { headers: { 'X-Client-Token': token } }).then(r => r.json());
+    setLoading(false);
+    if (Array.isArray(data)) setTickets(data);
+  }, [token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 shrink-0">
+        <div>
+          <h2 className="font-display text-sm uppercase tracking-wide">Заявки</h2>
+          <p className="text-xs text-muted-foreground">{tickets.length} шт.</p>
+        </div>
+        <div className="flex gap-2">
+          <button onClick={load} className="text-muted-foreground hover:text-foreground transition-colors p-1.5" title="Обновить">
+            <Icon name="RefreshCw" size={14} />
+          </button>
+          <Button onClick={onNewClick} size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 h-7 text-xs gap-1">
+            <Icon name="Plus" size={12} /> Подать заявку
+          </Button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {loading && (
+          <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+            <Icon name="Loader" size={16} className="animate-spin mr-2" /> Загрузка...
+          </div>
+        )}
+        {!loading && tickets.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+            <Icon name="TicketCheck" size={32} className="opacity-20" />
+            <p className="text-sm">Заявок пока нет</p>
+            <Button onClick={onNewClick} size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs">Подать первую</Button>
+          </div>
+        )}
+        {!loading && tickets.map(t => {
+          const st = STATUS_LABELS[t.status] || STATUS_LABELS.new;
+          const pr = PRIORITY_LABELS[t.priority] || PRIORITY_LABELS.medium;
+          const overdue = isOverdue(t);
+          return (
+            <div key={t.id} onClick={() => setDetailTicket(t)}
+              className={`px-4 py-3 border-b border-border/40 cursor-pointer transition-colors hover:bg-secondary/30 ${overdue ? 'bg-red-500/5' : ''}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap mb-1">
+                    <span className={`text-xs font-medium ${st.color} flex items-center gap-0.5`}>
+                      <Icon name={st.icon} size={11} /> {st.label}
+                    </span>
+                    <span className={`text-xs ${pr.color}`}>{pr.label}</span>
+                    {overdue && <span className="text-xs text-red-500 font-bold">Просрочена</span>}
+                  </div>
+                  <p className={`text-xs line-clamp-2 ${overdue ? 'text-red-300 font-bold' : 'text-foreground'}`}>{t.description}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{t.problem_type}</p>
+                </div>
+                <div className="text-right shrink-0">
+                  <p className="text-xs text-muted-foreground">#{t.id}</p>
+                  <p className="text-xs text-muted-foreground">{new Date(t.submitted_at).toLocaleDateString('ru')}</p>
+                  {t.deadline && <p className={`text-xs ${overdue ? 'text-red-400 font-semibold' : 'text-muted-foreground'}`}>до {new Date(t.deadline).toLocaleDateString('ru')}</p>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <Dialog open={!!detailTicket} onOpenChange={() => setDetailTicket(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase tracking-wide">Заявка #{detailTicket?.id}</DialogTitle>
+          </DialogHeader>
+          {detailTicket && <TicketDetail ticket={detailTicket} onClose={() => setDetailTicket(null)} />}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─── Панель баз данных ───────────────────────────────────────────────────────
+
+function DatabasesPanel({ token }: { token: string }) {
+  const [rows, setRows] = useState<UpdateRow[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const data = await fetch(`${TICKETS_URL}?resource=client-databases`, {
+      headers: { 'X-Client-Token': token },
+    }).then(r => r.json());
+    setLoading(false);
+    if (Array.isArray(data)) setRows(data);
+  }, [token]);
+
+  useEffect(() => { load(); }, [load]);
+
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 shrink-0">
+        <div>
+          <h2 className="font-display text-sm uppercase tracking-wide">Базы данных</h2>
+          <p className="text-xs text-muted-foreground">{rows.length} конфигураций</p>
+        </div>
+        <button onClick={load} className="text-muted-foreground hover:text-foreground transition-colors p-1.5" title="Обновить">
+          <Icon name="RefreshCw" size={14} />
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {loading && (
+          <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
+            <Icon name="Loader" size={16} className="animate-spin mr-2" /> Загрузка...
+          </div>
+        )}
+        {!loading && rows.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+            <Icon name="Database" size={32} className="opacity-20" />
+            <p className="text-sm">Баз данных не найдено</p>
+          </div>
+        )}
+        {!loading && rows.map(row => {
+          const outdated = versionGt(row.actual_config_version, row.current_config_version);
+          return (
+            <div key={row.client_db_id} className={`px-4 py-3 border-b border-border/40 ${outdated ? 'bg-yellow-500/5' : ''}`}>
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="flex items-center gap-2">
+                  <Icon name="Database" size={14} className="text-muted-foreground shrink-0" />
+                  <span className="text-sm font-medium">{row.config_name}</span>
+                </div>
+                {outdated && (
+                  <span className="flex items-center gap-1 text-xs text-yellow-400 font-medium shrink-0">
+                    <Icon name="AlertTriangle" size={12} /> Устарела
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs pl-5">
+                <div>
+                  <span className="text-muted-foreground">Текущая версия:</span>{' '}
+                  <span className={`font-mono ${outdated ? 'text-yellow-400 font-semibold' : 'text-foreground'}`}>
+                    {row.current_config_version || '—'}
+                    {outdated && <Icon name="AlertTriangle" size={11} className="inline ml-1 text-yellow-400" />}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Актуальная:</span>{' '}
+                  <span className="font-mono text-green-400">{row.actual_config_version || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Обновлено:</span>{' '}
+                  <span>{row.update_date || '—'}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Кто обновил:</span>{' '}
+                  <span>{row.updated_by_name || row.updated_by_login || '—'}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -183,11 +356,45 @@ function TicketDetail({ ticket, onClose }: { ticket: Ticket; onClose: () => void
 export default function PersonalAccount() {
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
   const [token, setToken] = useState('');
-  const [tickets, setTickets] = useState<Ticket[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
-  const [detailTicket, setDetailTicket] = useState<Ticket | null>(null);
   const navigate = useNavigate();
+
+  // Сплит-панель
+  const [splitWidth, setSplitWidth] = useState<number>(() => {
+    const saved = localStorage.getItem(SPLIT_WIDTH_KEY);
+    return saved ? Math.min(80, Math.max(20, Number(saved))) : DEFAULT_SPLIT;
+  });
+  const isDragging = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isDragging.current = true;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDragging.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const pct = Math.min(80, Math.max(20, ((e.clientX - rect.left) / rect.width) * 100));
+      setSplitWidth(pct);
+    };
+    const onUp = () => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setSplitWidth(prev => {
+        localStorage.setItem(SPLIT_WIDTH_KEY, String(prev));
+        return prev;
+      });
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem(CLIENT_TOKEN_KEY);
@@ -195,31 +402,12 @@ export default function PersonalAccount() {
     fetch(`${TICKETS_URL}?resource=client-verify`, { headers: { 'X-Client-Token': saved } })
       .then(r => r.json())
       .then(d => {
-        if (d.ok) {
-          setClientInfo({ client_id: d.client_id, name: d.name, login: d.login });
-          setToken(saved);
-        } else {
-          localStorage.removeItem(CLIENT_TOKEN_KEY);
-          navigate('/');
-        }
+        if (d.ok) { setClientInfo({ client_id: d.client_id, name: d.name, login: d.login }); setToken(saved); }
+        else { localStorage.removeItem(CLIENT_TOKEN_KEY); navigate('/'); }
       });
   }, []);
 
-  const loadTickets = async () => {
-    const saved = localStorage.getItem(CLIENT_TOKEN_KEY);
-    if (!saved) return;
-    setLoading(true);
-    const data = await fetch(`${TICKETS_URL}?resource=tickets`, { headers: { 'X-Client-Token': saved } }).then(r => r.json());
-    setLoading(false);
-    if (Array.isArray(data)) setTickets(data);
-  };
-
-  useEffect(() => { if (clientInfo) loadTickets(); }, [clientInfo]);
-
-  const logout = () => {
-    localStorage.removeItem(CLIENT_TOKEN_KEY);
-    navigate('/');
-  };
+  const logout = () => { localStorage.removeItem(CLIENT_TOKEN_KEY); navigate('/'); };
 
   if (!clientInfo) {
     return (
@@ -231,8 +419,9 @@ export default function PersonalAccount() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <header className="border-b border-border/60 bg-background/90 backdrop-blur-xl sticky top-0 z-40">
-        <div className="container flex items-center justify-between h-14">
+      {/* Шапка */}
+      <header className="border-b border-border/60 bg-background/90 backdrop-blur-xl sticky top-0 z-40 shrink-0">
+        <div className="px-4 flex items-center justify-between h-14">
           <div className="flex items-center gap-2.5">
             <span className="flex items-center justify-center w-8 h-8 rounded-md bg-primary/15 border border-primary/40">
               <Icon name="Hexagon" className="text-primary" size={16} />
@@ -249,9 +438,6 @@ export default function PersonalAccount() {
               <Icon name="User" size={14} />
               <span className="hidden sm:inline">{clientInfo.name}</span>
             </div>
-            <Button onClick={() => setShowNew(true)} size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 h-8 text-xs gap-1.5">
-              <Icon name="Plus" size={13} /> Подать заявку
-            </Button>
             <button onClick={logout} className="text-muted-foreground hover:text-destructive transition-colors p-1.5" title="Выйти">
               <Icon name="LogOut" size={16} />
             </button>
@@ -259,93 +445,35 @@ export default function PersonalAccount() {
         </div>
       </header>
 
-      <div className="container py-6">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="font-display text-xl uppercase tracking-wide">Мои заявки</h2>
-            <p className="text-xs text-muted-foreground mt-0.5">{tickets.length} заявок</p>
-          </div>
-          <Button onClick={loadTickets} variant="outline" size="sm" className="gap-1.5 text-xs">
-            <Icon name="RefreshCw" size={13} /> Обновить
-          </Button>
+      {/* Сплит-панель */}
+      <div ref={containerRef} className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 56px)' }}>
+        {/* Левая панель — заявки */}
+        <div className="flex flex-col overflow-hidden border-r border-border" style={{ width: `${splitWidth}%` }}>
+          <TicketsPanel token={token} onNewClick={() => setShowNew(true)} />
         </div>
 
-        {loading && (
-          <div className="flex items-center justify-center h-40 text-muted-foreground">
-            <Icon name="Loader" size={20} className="animate-spin mr-2" /> Загрузка...
-          </div>
-        )}
+        {/* Разделитель */}
+        <div
+          onMouseDown={onMouseDown}
+          className="w-1.5 shrink-0 bg-border hover:bg-primary/50 cursor-col-resize transition-colors active:bg-primary/70 relative group"
+          title="Потяните для изменения ширины"
+        >
+          <div className="absolute inset-y-0 -left-1 -right-1" />
+        </div>
 
-        {!loading && tickets.length === 0 && (
-          <div className="flex flex-col items-center justify-center h-48 text-muted-foreground gap-3">
-            <Icon name="TicketCheck" size={40} className="opacity-20" />
-            <p className="text-sm">Заявок пока нет</p>
-            <Button onClick={() => setShowNew(true)} size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90">
-              Подать первую заявку
-            </Button>
-          </div>
-        )}
-
-        {!loading && tickets.length > 0 && (
-          <div className="space-y-3">
-            {tickets.map(t => {
-              const st = STATUS_LABELS[t.status] || STATUS_LABELS.new;
-              const pr = PRIORITY_LABELS[t.priority] || PRIORITY_LABELS.medium;
-              const overdue = isOverdue(t);
-              return (
-                <div
-                  key={t.id}
-                  onClick={() => setDetailTicket(t)}
-                  className={`p-4 rounded-xl border cursor-pointer transition-all hover:border-primary/50 ${
-                    overdue ? 'border-red-500/50 bg-red-500/5' : 'border-border bg-card hover:bg-card/80'
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                        <span className={`text-xs font-medium ${st.color} flex items-center gap-1`}>
-                          <Icon name={st.icon} size={12} /> {st.label}
-                        </span>
-                        <span className={`text-xs font-medium ${pr.color}`}>{pr.label}</span>
-                        <span className="text-xs text-muted-foreground">{t.problem_type}</span>
-                        {overdue && <span className="text-xs text-red-500 font-bold">Просрочена</span>}
-                      </div>
-                      <p className={`text-sm line-clamp-2 ${overdue ? 'text-red-300 font-bold' : 'text-foreground'}`}>
-                        {t.description}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-xs text-muted-foreground">#{t.id}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">{new Date(t.submitted_at).toLocaleDateString('ru')}</p>
-                      {t.deadline && (
-                        <p className={`text-xs mt-0.5 ${overdue ? 'text-red-400 font-semibold' : 'text-muted-foreground'}`}>
-                          до {new Date(t.deadline).toLocaleDateString('ru')}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {/* Правая панель — базы данных */}
+        <div className="flex flex-col overflow-hidden flex-1">
+          <DatabasesPanel token={token} />
+        </div>
       </div>
 
+      {/* Диалог новой заявки */}
       <Dialog open={showNew} onOpenChange={setShowNew}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="font-display uppercase tracking-wide">Новая заявка</DialogTitle>
           </DialogHeader>
-          <NewTicketForm token={token} onCreated={loadTickets} onClose={() => setShowNew(false)} />
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!detailTicket} onOpenChange={() => setDetailTicket(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="font-display uppercase tracking-wide">Заявка #{detailTicket?.id}</DialogTitle>
-          </DialogHeader>
-          {detailTicket && <TicketDetail ticket={detailTicket} onClose={() => setDetailTicket(null)} />}
+          <NewTicketForm token={token} onCreated={() => {}} onClose={() => setShowNew(false)} />
         </DialogContent>
       </Dialog>
     </div>

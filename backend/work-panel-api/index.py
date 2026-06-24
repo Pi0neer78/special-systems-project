@@ -186,6 +186,8 @@ def handler(event: dict, context) -> dict:
         # ── UPDATES (список клиентов с базами для раздела Обновления) ───────────
         if resource == 'updates':
             if method == 'GET':
+                filter_client_id = qs.get('client_id', '')
+                where_sql = f"WHERE c.id = {int(filter_client_id)}" if filter_client_id else ""
                 cur.execute(f"""
                     SELECT
                         cd.id AS client_db_id,
@@ -208,6 +210,7 @@ def handler(event: dict, context) -> dict:
                             ORDER BY created_at DESC LIMIT 1
                         )
                     LEFT JOIN {SCHEMA}.admin_users au ON au.id = uh.updated_by_user_id
+                    {where_sql}
                     ORDER BY c.name, db.config_name
                 """)
                 return ok([dict(r) for r in cur.fetchall()])

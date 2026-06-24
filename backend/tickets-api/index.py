@@ -264,4 +264,38 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return resp(200, {'clients': clients, 'users': users, 'problem_types': PROBLEM_TYPES, 'priorities': PRIORITIES})
 
+    # ── Базы данных клиента (для личного кабинета) ──────────────────────────
+    if resource == 'client-databases' and method == 'GET':
+        client_token = headers.get('X-Client-Token', '')
+        client_id_from_token = verify_client_token(client_token) if client_token else None
+        if not client_id_from_token:
+            return resp(401, {'error': 'Не авторизован'})
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(f"""
+            SELECT
+                cd.id AS client_db_id,
+                db.config_name,
+                cd.current_config_version,
+                db.actual_config_version,
+                cd.update_date,
+                au.full_name AS updated_by_name,
+                au.login AS updated_by_login
+            FROM {SCHEMA}.client_databases cd
+            JOIN {SCHEMA}.config_databases db ON db.id = cd.config_database_id
+            LEFT JOIN {SCHEMA}.update_history uh ON uh.client_database_id = cd.id
+                AND uh.id = (
+                    SELECT id FROM {SCHEMA}.update_history
+                    WHERE client_database_id = cd.id
+                    ORDER BY created_at DESC LIMIT 1
+                )
+            LEFT JOIN {SCHEMA}.admin_users au ON au.id = uh.updated_by_user_id
+            WHERE cd.client_id = {client_id_from_token}
+            ORDER BY db.config_name
+        """)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return resp(200, rows)
+
     return resp(405, {'error': 'Неверный метод или ресурс'})
