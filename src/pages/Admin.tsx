@@ -520,6 +520,149 @@ type Client = {
   databases: ClientDB[];
 };
 
+function ClientPrintView({ client }: { client: Client }) {
+  const print = () => {
+    const w = window.open('', '_blank');
+    if (!w) return;
+
+    const v = (val: string | null | undefined, fallback = '—') => val || fallback;
+    const date = new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
+
+    const contact3 = (name: string, phone: string, email: string) => `
+      <div class="contact-row">
+        <div class="field"><label>ФИО</label><span>${v(name)}</span></div>
+        <div class="field"><label>Телефон</label><span>${v(phone)}</span></div>
+        <div class="field"><label>Email</label><span>${v(email)}</span></div>
+      </div>`;
+
+    const dbRows = (client.databases || []).length > 0
+      ? (client.databases || []).map(db => `
+          <tr>
+            <td>${v(db.config_name)}</td>
+            <td>${v(db.current_config_version)}</td>
+            <td>${db.update_date ? new Date(db.update_date).toLocaleDateString('ru-RU') : '—'}</td>
+          </tr>`).join('')
+      : '<tr><td colspan="3" style="color:#94a3b8;font-style:italic">Нет привязанных баз данных</td></tr>';
+
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Карточка клиента — ${client.name}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Oswald:wght@600;700&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'IBM Plex Sans',sans-serif;color:#0f172a;background:#fff;padding:36px 40px;font-size:12.5px;line-height:1.5}
+  /* Header */
+  .header{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:3px solid #2563eb;padding-bottom:14px;margin-bottom:20px}
+  .logo{font-family:'Oswald',sans-serif;font-size:22px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#2563eb}
+  .logo span{color:#0f172a}
+  .doc-meta{text-align:right;font-size:11px;color:#64748b}
+  .doc-meta strong{display:block;font-size:13px;color:#0f172a;font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:1px}
+  /* Name block */
+  .name-block{display:flex;align-items:flex-start;justify-content:space-between;background:linear-gradient(135deg,#eff6ff,#f8fafc);border:1px solid #bfdbfe;border-radius:10px;padding:16px 20px;margin-bottom:20px}
+  .name-block .org{font-family:'Oswald',sans-serif;font-size:22px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#0f172a;line-height:1.1}
+  .name-block .parent{font-size:11px;color:#64748b;margin-top:4px}
+  .name-block .badges{display:flex;flex-direction:column;align-items:flex-end;gap:6px;min-width:120px}
+  .badge{display:inline-flex;align-items:center;padding:3px 10px;border-radius:20px;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px}
+  .badge.active{background:#dcfce7;color:#166534}
+  .badge.blocked{background:#fee2e2;color:#991b1b}
+  .badge.inn{background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd}
+  /* Sections */
+  .section{margin-bottom:16px}
+  .section-title{font-family:'Oswald',sans-serif;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:2px;color:#2563eb;border-bottom:1px solid #e2e8f0;padding-bottom:5px;margin-bottom:10px}
+  /* Grid contacts */
+  .contact-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:8px 0;border-bottom:1px solid #f1f5f9}
+  .contact-row:last-child{border-bottom:none}
+  .field label{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:2px}
+  .field span{font-size:12.5px;color:#0f172a;font-weight:500}
+  /* General info grid */
+  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
+  .info-grid .field{padding:6px 8px;background:#f8fafc;border-radius:6px}
+  /* Databases table */
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  table thead tr{background:#eff6ff}
+  table th{text-align:left;padding:6px 10px;font-size:10.5px;font-weight:600;color:#2563eb;text-transform:uppercase;letter-spacing:0.5px;border-bottom:2px solid #bfdbfe}
+  table td{padding:6px 10px;border-bottom:1px solid #f1f5f9;color:#0f172a}
+  table tbody tr:last-child td{border-bottom:none}
+  table tbody tr:nth-child(even){background:#f8fafc}
+  /* Footer */
+  .footer{margin-top:24px;padding-top:10px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:10px;color:#94a3b8}
+  @media print{
+    body{padding:15px 20px}
+    @page{margin:10mm}
+  }
+</style></head><body>
+
+<div class="header">
+  <div>
+    <div class="logo">Спец<span>Системы</span></div>
+    <div style="font-size:11px;color:#64748b;margin-top:2px;text-transform:uppercase;letter-spacing:1px">Карточка клиента</div>
+  </div>
+  <div class="doc-meta">
+    <strong>Карточка клиента</strong>
+    Дата печати: ${date}<br>
+    ID клиента: ${client.id}
+  </div>
+</div>
+
+<div class="name-block">
+  <div>
+    <div class="org">${v(client.name)}</div>
+    ${client.parent_name ? `<div class="parent">Входит в: ${client.parent_name}</div>` : ''}
+    ${client.address ? `<div style="font-size:11.5px;color:#475569;margin-top:6px">📍 ${client.address}</div>` : ''}
+  </div>
+  <div class="badges">
+    <span class="badge ${client.is_active ? 'active' : 'blocked'}">${client.is_active ? '● Активен' : '● Заблокирован'}</span>
+    ${client.inn ? `<span class="badge inn">ИНН: ${client.inn}</span>` : ''}
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Реквизиты доступа</div>
+  <div class="info-grid">
+    <div class="field"><label>Логин в системе</label><span>${v(client.login)}</span></div>
+    <div class="field"><label>Адрес</label><span>${v(client.address)}</span></div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-title">Директор</div>
+  ${contact3(client.director_name, client.director_phone, client.director_email)}
+</div>
+
+<div class="section">
+  <div class="section-title">Бухгалтер</div>
+  ${contact3(client.accountant_name, client.accountant_phone, client.accountant_email)}
+</div>
+
+<div class="section">
+  <div class="section-title">Контактное лицо</div>
+  ${contact3(client.contact_name, client.contact_phone, client.contact_email)}
+</div>
+
+<div class="section">
+  <div class="section-title">Базы данных 1С (${(client.databases || []).length})</div>
+  <table>
+    <thead><tr><th>Конфигурация</th><th>Текущая версия</th><th>Дата обновления</th></tr></thead>
+    <tbody>${dbRows}</tbody>
+  </table>
+</div>
+
+<div class="footer">
+  <span>СпецСистемы — портал поддержки 1С:Бухгалтерия</span>
+  <span>Документ сформирован автоматически</span>
+</div>
+
+<script>window.onload=()=>window.print()</script>
+</body></html>`);
+    w.document.close();
+  };
+
+  return (
+    <button onClick={print} className="text-muted-foreground hover:text-primary transition-colors p-1" title="Печать карточки клиента">
+      <Icon name="Printer" size={14} />
+    </button>
+  );
+}
+
 const emptyClient = {
   parent_id: '', name: '', login: '', password: '', is_active: true, inn: '', address: '',
   director_name: '', director_phone: '', director_email: '',
@@ -677,9 +820,12 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
         </td>
         <td className="px-3 py-2"><Switch checked={c.is_active} onChange={() => toggleActive(c)} /></td>
         <td className="px-3 py-2 text-right">
-          <button onClick={() => openEdit(c)} className="text-muted-foreground hover:text-primary transition-colors p-1">
-            <Icon name="Pencil" size={14} />
-          </button>
+          <div className="flex items-center justify-end gap-0.5">
+            <ClientPrintView client={c} />
+            <button onClick={() => openEdit(c)} className="text-muted-foreground hover:text-primary transition-colors p-1">
+              <Icon name="Pencil" size={14} />
+            </button>
+          </div>
         </td>
       </tr>,
       ...(isExpanded ? children(c.id).flatMap(child => renderRow(child, depth + 1)) : []),
