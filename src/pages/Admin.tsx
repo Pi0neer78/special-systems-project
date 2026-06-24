@@ -17,9 +17,10 @@ const TOKEN_KEY = 'admin_token';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
-function api(path: string, method = 'GET', body?: object) {
+// Маршрутинг через query-параметры: ?resource=users&id=1&sub=db&subid=2
+function api(qs: string, method = 'GET', body?: object) {
   const token = localStorage.getItem(TOKEN_KEY) || '';
-  return fetch(`${API_URL}${path}`, {
+  return fetch(`${API_URL}?${qs}`, {
     method,
     headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
     body: body ? JSON.stringify(body) : undefined,
@@ -73,7 +74,7 @@ function UsersSection() {
 
   const load = useCallback(() => {
     setLoading(true);
-    api('/users').then(d => { setUsers(Array.isArray(d) ? d : []); setLoading(false); });
+    api('resource=users').then(d => { setUsers(Array.isArray(d) ? d : []); setLoading(false); });
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -91,9 +92,9 @@ function UsersSection() {
   const save = async () => {
     setSaving(true);
     if (modal.item) {
-      await api(`/users/${modal.item.id}`, 'PUT', form);
+      await api(`resource=users&id=${modal.item.id}`, 'PUT', form);
     } else {
-      await api('/users', 'POST', form);
+      await api('resource=users', 'POST', form);
     }
     setSaving(false);
     setModal({ open: false });
@@ -101,7 +102,7 @@ function UsersSection() {
   };
 
   const toggleActive = async (u: User) => {
-    await api(`/users/${u.id}`, 'PATCH');
+    await api(`resource=users&id=${u.id}`, 'PATCH');
     load();
   };
 
@@ -215,7 +216,7 @@ function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }
 
   const load = useCallback(() => {
     setLoading(true);
-    api('/databases').then(d => {
+    api('resource=databases').then(d => {
       const list = Array.isArray(d) ? d : [];
       setDbs(list);
       if (onLoaded) onLoaded(list);
@@ -239,9 +240,9 @@ function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }
   const save = async () => {
     setSaving(true);
     if (modal.item) {
-      await api(`/databases/${modal.item.id}`, 'PUT', form);
+      await api(`resource=databases&id=${modal.item.id}`, 'PUT', form);
     } else {
-      await api('/databases', 'POST', form);
+      await api('resource=databases', 'POST', form);
     }
     setSaving(false);
     setModal({ open: false });
@@ -368,7 +369,7 @@ function ClientsSection({ configDbs }: { configDbs: ConfigDB[] }) {
 
   const load = useCallback(() => {
     setLoading(true);
-    api('/clients').then(d => { setClients(Array.isArray(d) ? d : []); setLoading(false); });
+    api('resource=clients').then(d => { setClients(Array.isArray(d) ? d : []); setLoading(false); });
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -405,17 +406,16 @@ function ClientsSection({ configDbs }: { configDbs: ConfigDB[] }) {
     const payload = { ...form, parent_id: form.parent_id ? Number(form.parent_id) : null };
     let clientId = modal.item?.id;
     if (modal.item) {
-      await api(`/clients/${clientId}`, 'PUT', payload);
+      await api(`resource=clients&id=${clientId}`, 'PUT', payload);
     } else {
-      const res = await api('/clients', 'POST', payload);
+      const res = await api('resource=clients', 'POST', payload);
       clientId = res.id;
     }
-    // save new client dbs (only unsaved ones — those without id)
     for (const db of clientDbs) {
       if (!db.id && clientId) {
-        await api(`/clients/${clientId}/db`, 'POST', { config_database_id: db.config_database_id, current_config_version: db.current_config_version, update_date: db.update_date || null });
+        await api(`resource=clients&id=${clientId}&sub=db`, 'POST', { config_database_id: db.config_database_id, current_config_version: db.current_config_version, update_date: db.update_date || null });
       } else if (db.id) {
-        await api(`/clients/${db.client_id}/db/${db.id}`, 'PUT', { config_database_id: db.config_database_id, current_config_version: db.current_config_version, update_date: db.update_date || null });
+        await api(`resource=clients&id=${db.client_id}&sub=db&subid=${db.id}`, 'PUT', { config_database_id: db.config_database_id, current_config_version: db.current_config_version, update_date: db.update_date || null });
       }
     }
     setSaving(false);
@@ -424,7 +424,7 @@ function ClientsSection({ configDbs }: { configDbs: ConfigDB[] }) {
   };
 
   const toggleActive = async (c: Client) => {
-    await api(`/clients/${c.id}`, 'PATCH');
+    await api(`resource=clients&id=${c.id}`, 'PATCH');
     load();
   };
 
@@ -763,7 +763,7 @@ export default function Admin() {
 
   useEffect(() => {
     if (!authed) return;
-    api('/databases').then(d => { if (Array.isArray(d)) setConfigDbs(d); });
+    api('resource=databases').then(d => { if (Array.isArray(d)) setConfigDbs(d); });
   }, [authed]);
 
   const logout = () => {

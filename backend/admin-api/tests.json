@@ -3,7 +3,7 @@
     {
       "name": "No token returns 401",
       "method": "GET",
-      "path": "/",
+      "path": "/?resource=users",
       "expectedStatus": 401,
       "bodyMatcher": "partial"
     }
