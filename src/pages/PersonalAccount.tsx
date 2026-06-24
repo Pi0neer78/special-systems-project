@@ -181,9 +181,18 @@ function TicketDetail({ ticket, onClose }: { ticket: Ticket; onClose: () => void
 
 // ─── Список заявок ───────────────────────────────────────────────────────────
 
+const STATUS_FILTERS = [
+  { value: '', label: 'Все' },
+  { value: 'new', label: 'Новые' },
+  { value: 'in_progress', label: 'В процессе' },
+  { value: 'resolved', label: 'Решённые' },
+  { value: 'cancelled', label: 'Отменённые' },
+];
+
 function TicketsPanel({ token, onNewClick }: { token: string; onNewClick: () => void }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState('');
   const [detailTicket, setDetailTicket] = useState<Ticket | null>(null);
 
   const load = useCallback(async () => {
@@ -195,12 +204,14 @@ function TicketsPanel({ token, onNewClick }: { token: string; onNewClick: () => 
 
   useEffect(() => { load(); }, [load]);
 
+  const filtered = filterStatus ? tickets.filter(t => t.status === filterStatus) : tickets;
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center justify-between px-4 py-3 border-b border-border/60 shrink-0">
         <div>
           <h2 className="font-display text-sm uppercase tracking-wide">Заявки</h2>
-          <p className="text-xs text-muted-foreground">{tickets.length} шт.</p>
+          <p className="text-xs text-muted-foreground">{filtered.length} шт.</p>
         </div>
         <div className="flex gap-2">
           <button onClick={load} className="text-muted-foreground hover:text-foreground transition-colors p-1.5" title="Обновить">
@@ -212,20 +223,33 @@ function TicketsPanel({ token, onNewClick }: { token: string; onNewClick: () => 
         </div>
       </div>
 
+      <div className="flex gap-1 px-4 py-2 border-b border-border/40 shrink-0 flex-wrap">
+        {STATUS_FILTERS.map(f => (
+          <button key={f.value} onClick={() => setFilterStatus(f.value)}
+            className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
+              filterStatus === f.value
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+            }`}>
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-y-auto">
         {loading && (
           <div className="flex items-center justify-center h-32 text-muted-foreground text-sm">
             <Icon name="Loader" size={16} className="animate-spin mr-2" /> Загрузка...
           </div>
         )}
-        {!loading && tickets.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
             <Icon name="TicketCheck" size={32} className="opacity-20" />
             <p className="text-sm">Заявок пока нет</p>
             <Button onClick={onNewClick} size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 text-xs">Подать первую</Button>
           </div>
         )}
-        {!loading && tickets.map(t => {
+        {!loading && filtered.map(t => {
           const st = STATUS_LABELS[t.status] || STATUS_LABELS.new;
           const pr = PRIORITY_LABELS[t.priority] || PRIORITY_LABELS.medium;
           const overdue = isOverdue(t);
