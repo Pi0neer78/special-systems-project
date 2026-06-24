@@ -33,6 +33,7 @@ async function api(qs: string, method = 'GET', body?: object) {
 interface Folder { id: number; parent_id: number | null; name: string; sort_order: number; }
 interface Credential {
   id: number; folder_id: number | null; name: string;
+  login: string; password: string;
   login1: string; password1: string; login2: string; password2: string;
   login3: string; password3: string; ip: string; notes: string;
 }
@@ -73,7 +74,8 @@ function CopyBtn({ value }: { value: string }) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 const EMPTY_CRED: Omit<Credential, 'id'> = {
-  folder_id: null, name: '', login1: '', password1: '', login2: '', password2: '',
+  folder_id: null, name: '', login: '', password: '',
+  login1: '', password1: '', login2: '', password2: '',
   login3: '', password3: '', ip: '', notes: '',
 };
 
@@ -146,7 +148,7 @@ function CredentialsSection() {
 
   const selectCred = (c: Credential) => {
     setSelectedCred(c);
-    setForm({ folder_id: c.folder_id, name: c.name, login1: c.login1 || '', password1: c.password1 || '', login2: c.login2 || '', password2: c.password2 || '', login3: c.login3 || '', password3: c.password3 || '', ip: c.ip || '', notes: c.notes || '' });
+    setForm({ folder_id: c.folder_id, name: c.name, login: c.login || '', password: c.password || '', login1: c.login1 || '', password1: c.password1 || '', login2: c.login2 || '', password2: c.password2 || '', login3: c.login3 || '', password3: c.password3 || '', ip: c.ip || '', notes: c.notes || '' });
     setDirty(false);
   };
 
@@ -266,6 +268,24 @@ function CredentialsSection() {
                     <Input value={form.name} onChange={ff('name')} className="bg-secondary/40 border-border h-8 text-sm" placeholder="Название записи" />
                   </div>
 
+                  {/* Логин и Пароль */}
+                  <div className="flex items-end gap-3">
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Логин</label>
+                      <div className="flex items-center gap-1">
+                        <Input value={form.login} onChange={ff('login')} className={F_W} placeholder="Логин" />
+                        <CopyBtn value={form.login} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-muted-foreground mb-1 block">Пароль</label>
+                      <div className="flex items-center gap-1">
+                        <Input type="text" value={form.password} onChange={ff('password')} className={F_W} placeholder="Пароль" />
+                        <CopyBtn value={form.password} />
+                      </div>
+                    </div>
+                  </div>
+
                   {/* IP */}
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">IP-адрес</label>
@@ -283,17 +303,13 @@ function CredentialsSection() {
                       { n: 2, lk: 'login2' as const, pk: 'password2' as const },
                       { n: 3, lk: 'login3' as const, pk: 'password3' as const },
                     ]).map(({ n, lk, pk }) => (
-                      <div key={n} className="flex items-center gap-2 flex-wrap">
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-muted-foreground w-10">ID{n}</span>
-                          <Input value={form[lk] || ''} onChange={ff(lk)} className={F_W} placeholder={`Логин ${n}`} />
-                          <CopyBtn value={form[lk] || ''} />
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs text-muted-foreground w-12">PWD{n}</span>
-                          <Input type="text" value={form[pk] || ''} onChange={ff(pk)} className={F_W} placeholder={`Пароль ${n}`} />
-                          <CopyBtn value={form[pk] || ''} />
-                        </div>
+                      <div key={n} className="flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground w-8 shrink-0">ID{n}</span>
+                        <Input value={form[lk] || ''} onChange={ff(lk)} className={F_W} placeholder={`Логин ${n}`} />
+                        <CopyBtn value={form[lk] || ''} />
+                        <span className="text-xs text-muted-foreground w-10 shrink-0">PWD{n}</span>
+                        <Input type="text" value={form[pk] || ''} onChange={ff(pk)} className={F_W} placeholder={`Пароль ${n}`} />
+                        <CopyBtn value={form[pk] || ''} />
                       </div>
                     ))}
                   </div>

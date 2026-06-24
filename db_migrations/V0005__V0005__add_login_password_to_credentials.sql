@@ -1,0 +1,3 @@
+ALTER TABLE t_p34673685_special_systems_proj.credentials
+  ADD COLUMN IF NOT EXISTS login VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS password TEXT NULL;

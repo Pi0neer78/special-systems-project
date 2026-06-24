@@ -116,13 +116,15 @@ def handler(event: dict, context) -> dict:
                     folder_id = qs.get('folder_id', '')
                     if folder_id:
                         cur.execute(f"""
-                            SELECT id, folder_id, name, login1, password1, login2, password2,
+                            SELECT id, folder_id, name, login, password,
+                                   login1, password1, login2, password2,
                                    login3, password3, ip, notes
                             FROM {SCHEMA}.credentials WHERE folder_id=%s ORDER BY name
                         """, [folder_id])
                     else:
                         cur.execute(f"""
-                            SELECT id, folder_id, name, login1, password1, login2, password2,
+                            SELECT id, folder_id, name, login, password,
+                                   login1, password1, login2, password2,
                                    login3, password3, ip, notes
                             FROM {SCHEMA}.credentials ORDER BY name
                         """)
@@ -130,13 +132,16 @@ def handler(event: dict, context) -> dict:
                 if method == 'POST':
                     cur.execute(f"""
                         INSERT INTO {SCHEMA}.credentials
-                          (folder_id, name, login1, password1, login2, password2,
+                          (folder_id, name, login, password,
+                           login1, password1, login2, password2,
                            login3, password3, ip, notes)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                        RETURNING id, folder_id, name, login1, password1, login2, password2,
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        RETURNING id, folder_id, name, login, password,
+                                  login1, password1, login2, password2,
                                   login3, password3, ip, notes
                     """, (
                         body.get('folder_id'), body.get('name', ''),
+                        body.get('login'), body.get('password'),
                         body.get('login1'), body.get('password1'),
                         body.get('login2'), body.get('password2'),
                         body.get('login3'), body.get('password3'),
@@ -147,7 +152,8 @@ def handler(event: dict, context) -> dict:
             else:
                 if method == 'GET':
                     cur.execute(f"""
-                        SELECT id, folder_id, name, login1, password1, login2, password2,
+                        SELECT id, folder_id, name, login, password,
+                               login1, password1, login2, password2,
                                login3, password3, ip, notes
                         FROM {SCHEMA}.credentials WHERE id=%s
                     """, [rid])
@@ -156,14 +162,17 @@ def handler(event: dict, context) -> dict:
                 if method == 'PUT':
                     cur.execute(f"""
                         UPDATE {SCHEMA}.credentials SET
-                          folder_id=%s, name=%s, login1=%s, password1=%s,
+                          folder_id=%s, name=%s, login=%s, password=%s,
+                          login1=%s, password1=%s,
                           login2=%s, password2=%s, login3=%s, password3=%s,
                           ip=%s, notes=%s, updated_at=NOW()
                         WHERE id=%s
-                        RETURNING id, folder_id, name, login1, password1, login2, password2,
+                        RETURNING id, folder_id, name, login, password,
+                                  login1, password1, login2, password2,
                                   login3, password3, ip, notes
                     """, (
                         body.get('folder_id'), body.get('name', ''),
+                        body.get('login'), body.get('password'),
                         body.get('login1'), body.get('password1'),
                         body.get('login2'), body.get('password2'),
                         body.get('login3'), body.get('password3'),
