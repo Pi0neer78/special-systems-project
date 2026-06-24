@@ -44,8 +44,8 @@ def get_conn():
 
 
 def handler(event: dict, context) -> dict:
-    """CRUD API для административной панели: пользователи, клиенты, базы данных.
-    Маршрутинг через query-параметры: ?resource=users|clients|databases&id=N&sub=db&subid=M
+    """CRUD API для административной панели: пользователи, клиенты, базы данных, привязки.
+    Маршрутинг через query-параметры: ?resource=users|clients|databases|user_clients&id=N&sub=db&subid=M
     """
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
@@ -73,7 +73,20 @@ def handler(event: dict, context) -> dict:
             if not rid:
                 if method == 'GET':
                     cur.execute(f"SELECT id, login, is_active, phone, description, created_at FROM {SCHEMA}.admin_users ORDER BY id")
-                    return ok(cur.fetchall())
+                    users = [dict(r) for r in cur.fetchall()]
+                    # attach linked clients for each user
+                    cur.execute(f"""
+                        SELECT uc.user_id, c.id as client_id, c.name as client_name
+                        FROM {SCHEMA}.user_clients uc
+                        JOIN {SCHEMA}.clients c ON c.id = uc.client_id
+                        ORDER BY c.name
+                    """)
+                    uc_map = {}
+                    for row in cur.fetchall():
+                        uc_map.setdefault(row['user_id'], []).append({'client_id': row['client_id'], 'client_name': row['client_name']})
+                    for u in users:
+                        u['clients'] = uc_map.get(u['id'], [])
+                    return ok(users)
                 if method == 'POST':
                     pwd_hash = hash_password(body['password'])
                     cur.execute(
@@ -224,6 +237,40 @@ def handler(event: dict, context) -> dict:
                     """, (body['config_name'], body.get('min_platform_version'), body.get('actual_config_version'), body.get('update_release_date') or None, rid))
                     conn.commit()
                     return ok(dict(cur.fetchone()))
+
+        # ── USER ↔ CLIENT LINKS ────────────────────────────────────────────────
+        # GET  ?resource=user_clients&id=USER_ID  → список клиентов пользователя
+        # POST ?resource=user_clients             body: {user_id, client_id}  → создать связь
+        # PATCH?resource=user_clients&id=LINK_ID  → удалить связь (soft-delete через PATCH)
+        if resource == 'user_clients':
+            if not rid:
+                if method == 'GET':
+                    # Все связи с деталями
+                    cur.execute(f"""
+                        SELECT uc.id, uc.user_id, u.login as user_login,
+                               uc.client_id, c.name as client_name
+                        FROM {SCHEMA}.user_clients uc
+                        JOIN {SCHEMA}.admin_users u ON u.id = uc.user_id
+                        JOIN {SCHEMA}.clients c ON c.id = uc.client_id
+                        ORDER BY u.login, c.name
+                    """)
+                    return ok(cur.fetchall())
+                if method == 'POST':
+                    cur.execute(f"""
+                        INSERT INTO {SCHEMA}.user_clients (user_id, client_id)
+                        VALUES (%s, %s)
+                        ON CONFLICT (user_id, client_id) DO NOTHING
+                        RETURNING id
+                    """, (body['user_id'], body['client_id']))
+                    conn.commit()
+                    row = cur.fetchone()
+                    return ok({'id': row['id'] if row else None})
+            else:
+                # PATCH ?id=LINK_ID → удалить связь
+                if method == 'PATCH':
+                    cur.execute(f"DELETE FROM {SCHEMA}.user_clients WHERE id=%s RETURNING id", [rid])
+                    conn.commit()
+                    return ok({'deleted': rid})
 
         return err('Not found', 404)
 

@@ -3,7 +3,6 @@ import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Badge } from '@/components/ui/badge';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -62,15 +61,87 @@ function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 // USERS SECTION
 // ══════════════════════════════════════════════════════════════════════════════
 
-type User = { id: number; login: string; is_active: boolean; phone: string; description: string };
+type UserClient = { client_id: number; client_name: string };
+type User = { id: number; login: string; is_active: boolean; phone: string; description: string; clients: UserClient[] };
 
-function UsersSection() {
+// Панель привязки клиентов к пользователю
+function UserClientsPanel({ user, allClients, onChanged }: {
+  user: User;
+  allClients: { id: number; name: string }[];
+  onChanged: () => void;
+}) {
+  const [addClientId, setAddClientId] = useState('');
+  const [saving, setSaving] = useState(false);
+  const linked = user.clients || [];
+  const linkedIds = new Set(linked.map(c => c.client_id));
+  const available = allClients.filter(c => !linkedIds.has(c.id));
+
+  const add = async () => {
+    if (!addClientId) return;
+    setSaving(true);
+    await api('resource=user_clients', 'POST', { user_id: user.id, client_id: Number(addClientId) });
+    setAddClientId('');
+    setSaving(false);
+    onChanged();
+  };
+
+  const remove = async (linkId: number) => {
+    await api(`resource=user_clients&id=${linkId}`, 'PATCH');
+    onChanged();
+  };
+
+  // linkId нужен для удаления — запрашиваем все связи при открытии
+  const [links, setLinks] = useState<{ id: number; client_id: number }[]>([]);
+  useEffect(() => {
+    api('resource=user_clients').then(d => {
+      if (Array.isArray(d)) setLinks(d.filter((l: { user_id: number; client_id: number; id: number }) => l.user_id === user.id));
+    });
+  }, [user.id, linked.length]);
+
+  const getLinkId = (clientId: number) => links.find(l => l.client_id === clientId)?.id;
+
+  return (
+    <div className="space-y-2">
+      {linked.length === 0 && <p className="text-xs text-muted-foreground">Нет привязанных клиентов</p>}
+      {linked.map(c => (
+        <div key={c.client_id} className="flex items-center justify-between bg-secondary/40 rounded-lg px-3 py-1.5">
+          <span className="text-sm">{c.client_name}</span>
+          <button
+            onClick={() => { const id = getLinkId(c.client_id); if (id) remove(id); }}
+            className="text-destructive/70 hover:text-destructive transition-colors p-0.5"
+            title="Отвязать"
+          >
+            <Icon name="X" size={13} />
+          </button>
+        </div>
+      ))}
+      {available.length > 0 && (
+        <div className="flex gap-2 pt-1">
+          <Select value={addClientId} onValueChange={setAddClientId}>
+            <SelectTrigger className="bg-secondary/40 border-border h-8 text-sm flex-1">
+              <SelectValue placeholder="Выбрать клиента..." />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border">
+              {available.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Button size="sm" onClick={add} disabled={saving || !addClientId} className="bg-primary text-primary-foreground hover:bg-primary/90 h-8 shrink-0">
+            <Icon name="Plus" size={14} />
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UsersSection({ allClients }: { allClients: { id: number; name: string }[] }) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState<{ open: boolean; item?: User }>({ open: false });
   const [form, setForm] = useState({ login: '', password: '', is_active: true, phone: '', description: '' });
   const [saving, setSaving] = useState(false);
+  const [expandedUser, setExpandedUser] = useState<number | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -132,7 +203,7 @@ function UsersSection() {
           <table className="w-full text-sm">
             <thead className="bg-secondary/60">
               <tr>
-                {['Логин', 'Телефон', 'Описание', 'Активен', ''].map(h => (
+                {['Логин', 'Телефон', 'Клиенты', 'Активен', ''].map(h => (
                   <th key={h} className="text-left px-3 py-2 text-xs text-muted-foreground font-medium">{h}</th>
                 ))}
               </tr>
@@ -142,19 +213,46 @@ function UsersSection() {
                 <tr><td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">{search ? 'Ничего не найдено' : 'Нет пользователей'}</td></tr>
               )}
               {filtered.map(u => (
-                <tr key={u.id} className="border-t border-border hover:bg-secondary/30 transition-colors">
-                  <td className="px-3 py-2 font-mono text-xs">{u.login}</td>
-                  <td className="px-3 py-2 text-muted-foreground">{u.phone || '—'}</td>
-                  <td className="px-3 py-2 text-muted-foreground max-w-[200px] truncate">{u.description || '—'}</td>
-                  <td className="px-3 py-2">
-                    <Switch checked={u.is_active} onChange={() => toggleActive(u)} />
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <button onClick={() => openEdit(u)} className="text-muted-foreground hover:text-primary transition-colors p-1">
-                      <Icon name="Pencil" size={14} />
-                    </button>
-                  </td>
-                </tr>
+                <>
+                  <tr key={u.id} className="border-t border-border hover:bg-secondary/30 transition-colors">
+                    <td className="px-3 py-2 font-mono text-xs">{u.login}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{u.phone || '—'}</td>
+                    <td className="px-3 py-2">
+                      <button
+                        onClick={() => setExpandedUser(expandedUser === u.id ? null : u.id)}
+                        className="flex items-center gap-1.5 text-xs hover:text-primary transition-colors"
+                      >
+                        <Icon name="Building2" size={13} className="text-muted-foreground" />
+                        <span className={u.clients?.length ? 'text-primary font-medium' : 'text-muted-foreground'}>
+                          {u.clients?.length || 0} клиент{u.clients?.length === 1 ? '' : (u.clients?.length && u.clients.length < 5) ? 'а' : 'ов'}
+                        </span>
+                        <Icon name={expandedUser === u.id ? 'ChevronUp' : 'ChevronDown'} size={12} className="text-muted-foreground" />
+                      </button>
+                    </td>
+                    <td className="px-3 py-2">
+                      <Switch checked={u.is_active} onChange={() => toggleActive(u)} />
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      <button onClick={() => openEdit(u)} className="text-muted-foreground hover:text-primary transition-colors p-1">
+                        <Icon name="Pencil" size={14} />
+                      </button>
+                    </td>
+                  </tr>
+                  {expandedUser === u.id && (
+                    <tr key={`${u.id}-clients`} className="border-t border-border bg-secondary/20">
+                      <td colSpan={5} className="px-4 py-3">
+                        <div className="text-xs font-mono text-primary uppercase tracking-widest mb-2">
+                          Клиенты пользователя {u.login}
+                        </div>
+                        <UserClientsPanel
+                          user={u}
+                          allClients={allClients}
+                          onChanged={load}
+                        />
+                      </td>
+                    </tr>
+                  )}
+                </>
               ))}
             </tbody>
           </table>
@@ -354,7 +452,7 @@ const emptyClient = {
   contact_name: '', contact_phone: '', contact_email: '',
 };
 
-function ClientsSection({ configDbs }: { configDbs: ConfigDB[] }) {
+function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]; onClientsChanged?: (clients: Client[]) => void }) {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -369,7 +467,12 @@ function ClientsSection({ configDbs }: { configDbs: ConfigDB[] }) {
 
   const load = useCallback(() => {
     setLoading(true);
-    api('resource=clients').then(d => { setClients(Array.isArray(d) ? d : []); setLoading(false); });
+    api('resource=clients').then(d => {
+      const list = Array.isArray(d) ? d : [];
+      setClients(list);
+      if (onClientsChanged) onClientsChanged(list);
+      setLoading(false);
+    });
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -752,6 +855,7 @@ export default function Admin() {
   const [authed, setAuthed] = useState(false);
   const [tab, setTab] = useState<Tab>('users');
   const [configDbs, setConfigDbs] = useState<ConfigDB[]>([]);
+  const [allClients, setAllClients] = useState<{ id: number; name: string }[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -764,6 +868,9 @@ export default function Admin() {
   useEffect(() => {
     if (!authed) return;
     api('resource=databases').then(d => { if (Array.isArray(d)) setConfigDbs(d); });
+    api('resource=clients').then(d => {
+      if (Array.isArray(d)) setAllClients(d.map((c: { id: number; name: string }) => ({ id: c.id, name: c.name })));
+    });
   }, [authed]);
 
   const logout = () => {
@@ -815,8 +922,8 @@ export default function Admin() {
       </header>
 
       <main className="flex-1 container py-8">
-        {tab === 'users' && <UsersSection />}
-        {tab === 'clients' && <ClientsSection configDbs={configDbs} />}
+        {tab === 'users' && <UsersSection allClients={allClients} />}
+        {tab === 'clients' && <ClientsSection configDbs={configDbs} onClientsChanged={d => setAllClients(d.map(c => ({ id: c.id, name: c.name })))} />}
         {tab === 'databases' && <DatabasesSection onLoaded={setConfigDbs} />}
       </main>
     </div>
