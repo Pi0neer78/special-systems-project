@@ -1033,7 +1033,9 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
 // LOGIN PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 
-function AdminLogin({ onLogin }: { onLogin: () => void }) {
+type AuthInfo = { role: 'admin' | 'user'; user_id: number; login: string; full_name?: string };
+
+function AdminLogin({ onLogin }: { onLogin: (info: AuthInfo) => void }) {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -1051,9 +1053,9 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
     setLoading(false);
     if (res.token) {
       localStorage.setItem(TOKEN_KEY, res.token);
-      onLogin();
+      onLogin({ role: res.role, user_id: res.user_id, login: res.login || login, full_name: res.full_name });
     } else {
-      setError(res.error || 'Ошибка входа');
+      setError(res.error || 'Неверный логин или пароль');
     }
   };
 
@@ -1098,39 +1100,53 @@ function AdminLogin({ onLogin }: { onLogin: () => void }) {
 type Tab = 'users' | 'clients' | 'databases';
 
 export default function Admin() {
-  const [authed, setAuthed] = useState(false);
-  const [tab, setTab] = useState<Tab>('users');
+  const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
+  const [tab, setTab] = useState<Tab>('clients');
   const [configDbs, setConfigDbs] = useState<ConfigDB[]>([]);
   const [allClients, setAllClients] = useState<{ id: number; name: string }[]>([]);
 
+  // Проверяем сохранённый токен при загрузке
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return;
-    fetch(`${AUTH_URL}/verify`, { headers: { 'X-Admin-Token': token } })
+    fetch(AUTH_URL, { headers: { 'X-Admin-Token': token } })
       .then(r => r.json())
-      .then(d => { if (d.ok) setAuthed(true); });
+      .then(d => {
+        if (d.ok) setAuthInfo({ role: d.role, user_id: d.user_id, login: d.login, full_name: d.full_name });
+      })
+      .catch(() => {});
   }, []);
 
+  // При входе устанавливаем дефолтный таб в зависимости от роли
+  const handleLogin = (info: AuthInfo) => {
+    setAuthInfo(info);
+    setTab(info.role === 'admin' ? 'users' : 'clients');
+  };
+
   useEffect(() => {
-    if (!authed) return;
+    if (!authInfo) return;
     api('resource=databases').then(d => { if (Array.isArray(d)) setConfigDbs(d); });
     api('resource=clients').then(d => {
       if (Array.isArray(d)) setAllClients(d.map((c: { id: number; name: string }) => ({ id: c.id, name: c.name })));
     });
-  }, [authed]);
+  }, [authInfo]);
 
   const logout = () => {
     localStorage.removeItem(TOKEN_KEY);
-    setAuthed(false);
+    setAuthInfo(null);
+    setTab('clients');
   };
 
-  if (!authed) return <AdminLogin onLogin={() => setAuthed(true)} />;
+  if (!authInfo) return <AdminLogin onLogin={handleLogin} />;
 
-  const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'users', label: 'Пользователи', icon: 'Users' },
-    { id: 'clients', label: 'Клиенты', icon: 'Building2' },
-    { id: 'databases', label: 'Базы данных', icon: 'Database' },
+  const isAdmin = authInfo.role === 'admin';
+
+  const allTabs: { id: Tab; label: string; icon: string; adminOnly: boolean }[] = [
+    { id: 'users', label: 'Пользователи', icon: 'Users', adminOnly: true },
+    { id: 'clients', label: 'Клиенты', icon: 'Building2', adminOnly: false },
+    { id: 'databases', label: 'Базы данных', icon: 'Database', adminOnly: false },
   ];
+  const tabs = allTabs.filter(t => !t.adminOnly || isAdmin);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -1138,13 +1154,13 @@ export default function Admin() {
         <div className="container flex items-center justify-between h-14">
           <div className="flex items-center gap-2.5">
             <span className="flex items-center justify-center w-8 h-8 rounded-md bg-primary/15 border border-primary/40">
-              <Icon name="ShieldCheck" className="text-primary" size={17} />
+              <Icon name={isAdmin ? 'ShieldCheck' : 'User'} className="text-primary" size={17} />
             </span>
             <span className="font-display text-base uppercase tracking-wide">
               Спец<span className="text-primary">Системы</span>
             </span>
             <span className="text-xs font-mono text-muted-foreground border border-border rounded px-2 py-0.5 hidden sm:inline">
-              Панель администратора
+              {isAdmin ? 'Администратор' : (authInfo.full_name || authInfo.login)}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -1160,7 +1176,7 @@ export default function Admin() {
                 <span className="hidden sm:inline">{t.label}</span>
               </button>
             ))}
-            <button onClick={logout} className="ml-2 text-muted-foreground hover:text-destructive transition-colors p-1.5">
+            <button onClick={logout} className="ml-2 text-muted-foreground hover:text-destructive transition-colors p-1.5" title="Выйти">
               <Icon name="LogOut" size={16} />
             </button>
           </div>
@@ -1168,7 +1184,7 @@ export default function Admin() {
       </header>
 
       <main className="flex-1 container py-8">
-        {tab === 'users' && <UsersSection allClients={allClients} />}
+        {tab === 'users' && isAdmin && <UsersSection allClients={allClients} />}
         {tab === 'clients' && <ClientsSection configDbs={configDbs} onClientsChanged={d => setAllClients(d.map(c => ({ id: c.id, name: c.name })))} />}
         {tab === 'databases' && <DatabasesSection onLoaded={setConfigDbs} />}
       </main>

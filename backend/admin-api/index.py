@@ -25,14 +25,27 @@ def err(msg, code=400):
     return {'statusCode': code, 'headers': CORS, 'body': json.dumps({'error': msg})}
 
 
-def verify_token(token: str) -> bool:
+def get_all_logins(conn):
+    """Получить все активные логины пользователей + суперадмин."""
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(f"SELECT id, login FROM {SCHEMA}.admin_users WHERE is_active = TRUE")
+    rows = [{'user_id': r['id'], 'login': r['login'], 'role': 'user'} for r in cur.fetchall()]
+    cur.close()
+    rows.append({'user_id': 0, 'login': ADMIN_LOGIN, 'role': 'admin'})
+    return rows
+
+
+def decode_token(token: str, conn) -> dict:
+    """Декодирует токен, возвращает {'role': ..., 'user_id': ..., 'login': ...} или None."""
+    candidates = get_all_logins(conn)
     for delta in [0, -1]:
         ts = str(int(time.time() // 3600) + delta)
-        payload = f"{ADMIN_LOGIN}:{ts}:{SECRET_KEY}"
-        expected = hmac.new(SECRET_KEY.encode(), payload.encode(), digestmod=hashlib.sha256).hexdigest()
-        if hmac.compare_digest(token or '', expected):
-            return True
-    return False
+        for c in candidates:
+            payload = f"{c['login']}:{c['role']}:{c['user_id']}:{ts}:{SECRET_KEY}"
+            expected = hmac.new(SECRET_KEY.encode(), payload.encode(), digestmod=hashlib.sha256).hexdigest()
+            if hmac.compare_digest(token or '', expected):
+                return c
+    return None
 
 
 def hash_password(pwd: str) -> str:
@@ -51,9 +64,6 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
 
     token = (event.get('headers') or {}).get('X-Admin-Token', '')
-    if not verify_token(token):
-        return err('Unauthorized', 401)
-
     method = event.get('httpMethod', 'GET')
     qs = event.get('queryStringParameters') or {}
     resource = qs.get('resource', '')
@@ -68,6 +78,16 @@ def handler(event: dict, context) -> dict:
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     try:
+        caller = decode_token(token, conn)
+        if not caller:
+            return err('Unauthorized', 401)
+
+        is_admin = caller['role'] == 'admin'
+        caller_user_id = caller['user_id']
+
+        # Пользователь (не админ) имеет доступ только к clients и databases
+        if not is_admin and resource not in ('clients', 'databases'):
+            return err('Forbidden', 403)
         # ── USERS ──────────────────────────────────────────────────────────────
         if resource == 'users':
             if not rid:
@@ -125,29 +145,53 @@ def handler(event: dict, context) -> dict:
         if resource == 'clients':
             if not rid:
                 if method == 'GET':
-                    cur.execute(f"""
-                        SELECT c.id, c.parent_id, p.name as parent_name,
-                               c.name, c.login, c.is_active, c.inn, c.address,
-                               c.director_name, c.director_phone, c.director_email,
-                               c.accountant_name, c.accountant_phone, c.accountant_email,
-                               c.contact_name, c.contact_phone, c.contact_email
-                        FROM {SCHEMA}.clients c
-                        LEFT JOIN {SCHEMA}.clients p ON p.id = c.parent_id
-                        ORDER BY c.parent_id NULLS FIRST, c.name
-                    """)
+                    # Обычный пользователь — только привязанные клиенты
+                    if not is_admin:
+                        cur.execute(f"""
+                            SELECT c.id, c.parent_id, p.name as parent_name,
+                                   c.name, c.login, c.is_active, c.inn, c.address,
+                                   c.director_name, c.director_phone, c.director_email,
+                                   c.accountant_name, c.accountant_phone, c.accountant_email,
+                                   c.contact_name, c.contact_phone, c.contact_email
+                            FROM {SCHEMA}.clients c
+                            LEFT JOIN {SCHEMA}.clients p ON p.id = c.parent_id
+                            JOIN {SCHEMA}.user_clients uc ON uc.client_id = c.id AND uc.user_id = %s
+                            ORDER BY c.parent_id NULLS FIRST, c.name
+                        """, [caller_user_id])
+                    else:
+                        cur.execute(f"""
+                            SELECT c.id, c.parent_id, p.name as parent_name,
+                                   c.name, c.login, c.is_active, c.inn, c.address,
+                                   c.director_name, c.director_phone, c.director_email,
+                                   c.accountant_name, c.accountant_phone, c.accountant_email,
+                                   c.contact_name, c.contact_phone, c.contact_email
+                            FROM {SCHEMA}.clients c
+                            LEFT JOIN {SCHEMA}.clients p ON p.id = c.parent_id
+                            ORDER BY c.parent_id NULLS FIRST, c.name
+                        """)
                     clients = [dict(r) for r in cur.fetchall()]
-                    cur.execute(f"""
-                        SELECT cd.id, cd.client_id, cd.config_database_id,
-                               db.config_name, cd.current_config_version, cd.update_date
-                        FROM {SCHEMA}.client_databases cd
-                        JOIN {SCHEMA}.config_databases db ON db.id = cd.config_database_id
-                    """)
-                    db_map = {}
-                    for d in cur.fetchall():
-                        db_map.setdefault(d['client_id'], []).append(dict(d))
+                    client_ids = [c['id'] for c in clients]
+                    if client_ids:
+                        placeholders = ','.join(['%s'] * len(client_ids))
+                        cur.execute(f"""
+                            SELECT cd.id, cd.client_id, cd.config_database_id,
+                                   db.config_name, cd.current_config_version, cd.update_date
+                            FROM {SCHEMA}.client_databases cd
+                            JOIN {SCHEMA}.config_databases db ON db.id = cd.config_database_id
+                            WHERE cd.client_id IN ({placeholders})
+                        """, client_ids)
+                        db_map = {}
+                        for d in cur.fetchall():
+                            db_map.setdefault(d['client_id'], []).append(dict(d))
+                    else:
+                        db_map = {}
                     for c in clients:
                         c['databases'] = db_map.get(c['id'], [])
                     return ok(clients)
+
+                # Запись/изменение клиентов — только для админа
+                if not is_admin:
+                    return err('Forbidden', 403)
 
                 if method == 'POST':
                     pwd_hash = hash_password(body['password']) if body.get('password') else None
