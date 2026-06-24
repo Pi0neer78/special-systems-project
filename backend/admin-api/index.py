@@ -72,7 +72,7 @@ def handler(event: dict, context) -> dict:
         if resource == 'users':
             if not rid:
                 if method == 'GET':
-                    cur.execute(f"SELECT id, login, is_active, phone, description, created_at FROM {SCHEMA}.admin_users ORDER BY id")
+                    cur.execute(f"SELECT id, login, full_name, is_active, phone, description, created_at FROM {SCHEMA}.admin_users ORDER BY id")
                     users = [dict(r) for r in cur.fetchall()]
                     # attach linked clients for each user
                     cur.execute(f"""
@@ -90,8 +90,8 @@ def handler(event: dict, context) -> dict:
                 if method == 'POST':
                     pwd_hash = hash_password(body['password'])
                     cur.execute(
-                        f"INSERT INTO {SCHEMA}.admin_users (login, password_hash, is_active, phone, description) VALUES (%s,%s,%s,%s,%s) RETURNING id, login, is_active, phone, description",
-                        (body['login'], pwd_hash, body.get('is_active', True), body.get('phone'), body.get('description'))
+                        f"INSERT INTO {SCHEMA}.admin_users (login, password_hash, full_name, is_active, phone, description) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id, login, full_name, is_active, phone, description",
+                        (body['login'], pwd_hash, body.get('full_name'), body.get('is_active', True), body.get('phone'), body.get('description'))
                     )
                     conn.commit()
                     return ok(dict(cur.fetchone()))
@@ -109,9 +109,11 @@ def handler(event: dict, context) -> dict:
                         fields.append('phone=%s'); vals.append(body['phone'])
                     if 'description' in body:
                         fields.append('description=%s'); vals.append(body['description'])
+                    if 'full_name' in body:
+                        fields.append('full_name=%s'); vals.append(body['full_name'])
                     fields.append('updated_at=NOW()')
                     vals.append(rid)
-                    cur.execute(f"UPDATE {SCHEMA}.admin_users SET {', '.join(fields)} WHERE id=%s RETURNING id, login, is_active, phone, description", vals)
+                    cur.execute(f"UPDATE {SCHEMA}.admin_users SET {', '.join(fields)} WHERE id=%s RETURNING id, login, full_name, is_active, phone, description", vals)
                     conn.commit()
                     return ok(dict(cur.fetchone()))
                 if method == 'PATCH':

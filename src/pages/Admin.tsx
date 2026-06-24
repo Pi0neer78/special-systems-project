@@ -62,7 +62,7 @@ function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 // ══════════════════════════════════════════════════════════════════════════════
 
 type UserClient = { client_id: number; client_name: string };
-type User = { id: number; login: string; is_active: boolean; phone: string; description: string; clients: UserClient[] };
+type User = { id: number; login: string; full_name: string; is_active: boolean; phone: string; description: string; clients: UserClient[] };
 
 // Панель привязки клиентов к пользователю
 function UserClientsPanel({ user, allClients, onChanged }: {
@@ -134,12 +134,81 @@ function UserClientsPanel({ user, allClients, onChanged }: {
   );
 }
 
+// Печатная форма пользователя
+function UserPrintView({ user }: { user: User }) {
+  const print = () => {
+    const w = window.open('', '_blank');
+    if (!w) return;
+    const clients = (user.clients || []).map(c => `<li>${c.client_name}</li>`).join('') || '<li style="color:#888">Не привязан</li>';
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>Карточка пользователя — ${user.full_name || user.login}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Oswald:wght@600&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:'IBM Plex Sans',sans-serif;color:#0f172a;background:#fff;padding:40px;font-size:13px}
+  .header{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:3px solid #2563eb;padding-bottom:16px;margin-bottom:24px}
+  .logo{font-family:'Oswald',sans-serif;font-size:22px;font-weight:600;letter-spacing:2px;text-transform:uppercase;color:#2563eb}
+  .logo span{color:#0f172a}
+  .doc-title{font-size:11px;color:#64748b;margin-top:4px;text-transform:uppercase;letter-spacing:1px}
+  .date{font-size:11px;color:#64748b;text-align:right}
+  .name-block{background:#f1f5f9;border-left:4px solid #2563eb;padding:16px 20px;margin-bottom:20px;border-radius:0 8px 8px 0}
+  .name-block .fio{font-family:'Oswald',sans-serif;font-size:20px;font-weight:600;text-transform:uppercase;letter-spacing:1px}
+  .name-block .login{font-size:12px;color:#64748b;margin-top:4px;font-family:monospace}
+  .status{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-top:8px}
+  .status.active{background:#dcfce7;color:#166534}
+  .status.blocked{background:#fee2e2;color:#991b1b}
+  .section{margin-bottom:18px}
+  .section-title{font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:2px;color:#2563eb;border-bottom:1px solid #e2e8f0;padding-bottom:6px;margin-bottom:10px}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .field label{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:2px}
+  .field span{font-size:13px;color:#0f172a;font-weight:500}
+  .field span.empty{color:#cbd5e1;font-style:italic}
+  ul{list-style:none;padding:0}
+  ul li{padding:5px 10px;background:#f8fafc;border-radius:4px;margin-bottom:4px;font-size:12px;border-left:3px solid #2563eb}
+  .footer{margin-top:32px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:10px;color:#94a3b8}
+  @media print{body{padding:20px}}
+</style></head><body>
+<div class="header">
+  <div><div class="logo">Спец<span>Системы</span></div><div class="doc-title">Карточка пользователя</div></div>
+  <div class="date">Дата печати: ${new Date().toLocaleDateString('ru-RU', { day:'2-digit', month:'long', year:'numeric' })}</div>
+</div>
+<div class="name-block">
+  <div class="fio">${user.full_name || '— ФИО не указано —'}</div>
+  <div class="login">Логин: ${user.login}</div>
+  <div class="status ${user.is_active ? 'active' : 'blocked'}">${user.is_active ? '● Активен' : '● Заблокирован'}</div>
+</div>
+<div class="section">
+  <div class="section-title">Контактная информация</div>
+  <div class="grid">
+    <div class="field"><label>Телефон</label><span class="${user.phone ? '' : 'empty'}">${user.phone || 'не указан'}</span></div>
+    <div class="field"><label>Описание / должность</label><span class="${user.description ? '' : 'empty'}">${user.description || 'не указано'}</span></div>
+  </div>
+</div>
+<div class="section">
+  <div class="section-title">Привязанные клиенты (${(user.clients || []).length})</div>
+  <ul>${clients}</ul>
+</div>
+<div class="footer">
+  <span>СпецСистемы — портал поддержки 1С:Бухгалтерия</span>
+  <span>ID пользователя: ${user.id}</span>
+</div>
+<script>window.onload=()=>{window.print()}</script>
+</body></html>`);
+    w.document.close();
+  };
+  return (
+    <button onClick={print} className="text-muted-foreground hover:text-primary transition-colors p-1" title="Печать">
+      <Icon name="Printer" size={14} />
+    </button>
+  );
+}
+
 function UsersSection({ allClients }: { allClients: { id: number; name: string }[] }) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState<{ open: boolean; item?: User }>({ open: false });
-  const [form, setForm] = useState({ login: '', password: '', is_active: true, phone: '', description: '' });
+  const [form, setForm] = useState({ login: '', password: '', full_name: '', is_active: true, phone: '', description: '' });
   const [saving, setSaving] = useState(false);
   const [expandedUser, setExpandedUser] = useState<number | null>(null);
 
@@ -151,12 +220,12 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
   useEffect(() => { load(); }, [load]);
 
   const openAdd = () => {
-    setForm({ login: '', password: '', is_active: true, phone: '', description: '' });
+    setForm({ login: '', password: '', full_name: '', is_active: true, phone: '', description: '' });
     setModal({ open: true });
   };
 
   const openEdit = (u: User) => {
-    setForm({ login: u.login, password: '', is_active: u.is_active, phone: u.phone || '', description: u.description || '' });
+    setForm({ login: u.login, password: '', full_name: u.full_name || '', is_active: u.is_active, phone: u.phone || '', description: u.description || '' });
     setModal({ open: true, item: u });
   };
 
@@ -180,6 +249,7 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
   const q = search.toLowerCase();
   const filtered = users.filter(u =>
     u.login.toLowerCase().includes(q) ||
+    (u.full_name || '').toLowerCase().includes(q) ||
     (u.phone || '').toLowerCase().includes(q) ||
     (u.description || '').toLowerCase().includes(q)
   );
@@ -195,7 +265,7 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
 
       <div className="relative mb-3">
         <Icon name="Search" size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по логину, телефону..." className="pl-8 h-8 text-sm bg-secondary/40 border-border" />
+        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по ФИО, логину, телефону..." className="pl-8 h-8 text-sm bg-secondary/40 border-border" />
       </div>
 
       {loading ? <Spinner /> : (
@@ -203,7 +273,7 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
           <table className="w-full text-sm">
             <thead className="bg-secondary/60">
               <tr>
-                {['Логин', 'Телефон', 'Клиенты', 'Активен', ''].map(h => (
+                {['ФИО / Логин', 'Телефон', 'Клиенты', 'Активен', ''].map(h => (
                   <th key={h} className="text-left px-3 py-2 text-xs text-muted-foreground font-medium">{h}</th>
                 ))}
               </tr>
@@ -215,8 +285,11 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
               {filtered.map(u => (
                 <>
                   <tr key={u.id} className="border-t border-border hover:bg-secondary/30 transition-colors">
-                    <td className="px-3 py-2 font-mono text-xs">{u.login}</td>
-                    <td className="px-3 py-2 text-muted-foreground">{u.phone || '—'}</td>
+                    <td className="px-3 py-2">
+                      <div className="font-medium text-sm">{u.full_name || <span className="text-muted-foreground italic">—</span>}</div>
+                      <div className="font-mono text-xs text-muted-foreground">{u.login}</div>
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground text-xs">{u.phone || '—'}</td>
                     <td className="px-3 py-2">
                       <button
                         onClick={() => setExpandedUser(expandedUser === u.id ? null : u.id)}
@@ -224,7 +297,7 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
                       >
                         <Icon name="Building2" size={13} className="text-muted-foreground" />
                         <span className={u.clients?.length ? 'text-primary font-medium' : 'text-muted-foreground'}>
-                          {u.clients?.length || 0} клиент{u.clients?.length === 1 ? '' : (u.clients?.length && u.clients.length < 5) ? 'а' : 'ов'}
+                          {u.clients?.length || 0}
                         </span>
                         <Icon name={expandedUser === u.id ? 'ChevronUp' : 'ChevronDown'} size={12} className="text-muted-foreground" />
                       </button>
@@ -233,22 +306,21 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
                       <Switch checked={u.is_active} onChange={() => toggleActive(u)} />
                     </td>
                     <td className="px-3 py-2 text-right">
-                      <button onClick={() => openEdit(u)} className="text-muted-foreground hover:text-primary transition-colors p-1">
-                        <Icon name="Pencil" size={14} />
-                      </button>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <UserPrintView user={u} />
+                        <button onClick={() => openEdit(u)} className="text-muted-foreground hover:text-primary transition-colors p-1">
+                          <Icon name="Pencil" size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                   {expandedUser === u.id && (
                     <tr key={`${u.id}-clients`} className="border-t border-border bg-secondary/20">
                       <td colSpan={5} className="px-4 py-3">
                         <div className="text-xs font-mono text-primary uppercase tracking-widest mb-2">
-                          Клиенты пользователя {u.login}
+                          Клиенты: {u.full_name || u.login}
                         </div>
-                        <UserClientsPanel
-                          user={u}
-                          allClients={allClients}
-                          onChanged={load}
-                        />
+                        <UserClientsPanel user={u} allClients={allClients} onChanged={load} />
                       </td>
                     </tr>
                   )}
@@ -267,20 +339,23 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
             </DialogTitle>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Логин *" half>
-              <Input value={form.login} onChange={e => setForm(f => ({ ...f, login: e.target.value }))} className={inputCls} />
-            </Field>
-            <Field label={modal.item ? 'Новый пароль' : 'Пароль *'} half>
-              <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className={inputCls} placeholder={modal.item ? 'Оставьте пустым, чтобы не менять' : ''} />
-            </Field>
-            <Field label="Телефон" half>
-              <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className={inputCls} />
+            <Field label="ФИО">
+              <Input value={form.full_name} onChange={e => setForm(f => ({ ...f, full_name: e.target.value }))} className={inputCls} placeholder="Иванов Иван Иванович" />
             </Field>
             <Field label="Активен" half>
               <div className="flex items-center h-8 gap-2">
                 <Switch checked={form.is_active} onChange={v => setForm(f => ({ ...f, is_active: v }))} />
                 <span className="text-sm text-muted-foreground">{form.is_active ? 'Да' : 'Нет'}</span>
               </div>
+            </Field>
+            <Field label="Логин *" half>
+              <Input value={form.login} onChange={e => setForm(f => ({ ...f, login: e.target.value }))} className={inputCls} />
+            </Field>
+            <Field label={modal.item ? 'Новый пароль' : 'Пароль *'} half>
+              <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className={inputCls} placeholder={modal.item ? 'Не менять' : ''} />
+            </Field>
+            <Field label="Телефон">
+              <Input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className={inputCls} />
             </Field>
             <Field label="Описание">
               <Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="bg-secondary/40 border-border focus-visible:ring-primary text-sm resize-none" rows={2} />
@@ -464,6 +539,7 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
   const [dbForm, setDbForm] = useState({ config_database_id: '', current_config_version: '', update_date: '' });
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [ctab, setCtab] = useState<'general' | 'contacts' | 'databases'>('general');
 
   const load = useCallback(() => {
     setLoading(true);
@@ -480,6 +556,7 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
   const openAdd = () => {
     setForm(emptyClient);
     setClientDbs([]);
+    setCtab('general');
     setModal({ open: true });
   };
 
@@ -493,6 +570,7 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
       contact_name: c.contact_name || '', contact_phone: c.contact_phone || '', contact_email: c.contact_email || '',
     });
     setClientDbs(c.databases || []);
+    setCtab('general');
     setModal({ open: true, item: c });
   };
 
@@ -653,132 +731,154 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
         </div>
       )}
 
-      {/* Client modal */}
-      <Dialog open={modal.open} onOpenChange={o => { if (!o) setModal({ open: false }); }}>
-        <DialogContent className="bg-card border-border max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="font-display uppercase">
-              {modal.item ? 'Редактировать клиента' : 'Новый клиент'}
-            </DialogTitle>
-          </DialogHeader>
+      {/* Client modal — 3 вкладки, без скролла */}
+      {(() => {
+        const ctabs = [
+          { id: 'general' as const, label: 'Общие', icon: 'Building2' },
+          { id: 'contacts' as const, label: 'Контакты', icon: 'Users' },
+          { id: 'databases' as const, label: 'Базы данных', icon: 'Database' },
+        ];
+        return (
+          <Dialog open={modal.open} onOpenChange={o => { if (!o) { setModal({ open: false }); setCtab('general'); } }}>
+            <DialogContent className="bg-card border-border max-w-2xl p-0 gap-0 overflow-hidden" style={{ maxHeight: '92vh' }}>
+              <DialogHeader className="px-6 pt-5 pb-0">
+                <DialogTitle className="font-display uppercase text-base">
+                  {modal.item ? 'Редактировать клиента' : 'Новый клиент'}
+                </DialogTitle>
+              </DialogHeader>
 
-          <div className="grid grid-cols-2 gap-3">
-            {/* Основные */}
-            <SectionTitle>Основные данные</SectionTitle>
-            <Field label="Головная организация">
-              <Select value={form.parent_id} onValueChange={v => setForm(f => ({ ...f, parent_id: v === '__none__' ? '' : v }))}>
-                <SelectTrigger className="bg-secondary/40 border-border h-8 text-sm">
-                  <SelectValue placeholder="— нет —" />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-border">
-                  <SelectItem value="__none__">— нет —</SelectItem>
-                  {clients.filter(c => c.id !== modal.item?.id).map(c => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field label="Наименование *" half>
-              <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={inputCls} />
-            </Field>
-            <Field label="ИНН" half>
-              <Input value={form.inn} onChange={e => setForm(f => ({ ...f, inn: e.target.value }))} className={inputCls} />
-            </Field>
-            <Field label="Логин" half>
-              <Input value={form.login} onChange={e => setForm(f => ({ ...f, login: e.target.value }))} className={inputCls} />
-            </Field>
-            <Field label={modal.item ? 'Новый пароль' : 'Пароль'} half>
-              <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className={inputCls} placeholder={modal.item ? 'Не менять' : ''} />
-            </Field>
-            <Field label="Адрес">
-              <Input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className={inputCls} />
-            </Field>
-            <Field label="Активен" half>
-              <div className="flex items-center h-8 gap-2">
-                <Switch checked={form.is_active} onChange={v => setForm(f => ({ ...f, is_active: v }))} />
-                <span className="text-sm text-muted-foreground">{form.is_active ? 'Да' : 'Нет'}</span>
-              </div>
-            </Field>
-
-            {/* Директор */}
-            <SectionTitle>Директор</SectionTitle>
-            <Field label="ФИО">
-              <Input value={form.director_name} onChange={e => setForm(f => ({ ...f, director_name: e.target.value }))} className={inputCls} />
-            </Field>
-            <Field label="Телефон" half>
-              <Input value={form.director_phone} onChange={e => setForm(f => ({ ...f, director_phone: e.target.value }))} className={inputCls} />
-            </Field>
-            <Field label="Email" half>
-              <Input value={form.director_email} onChange={e => setForm(f => ({ ...f, director_email: e.target.value }))} className={inputCls} />
-            </Field>
-
-            {/* Бухгалтер */}
-            <SectionTitle>Бухгалтер</SectionTitle>
-            <Field label="ФИО">
-              <Input value={form.accountant_name} onChange={e => setForm(f => ({ ...f, accountant_name: e.target.value }))} className={inputCls} />
-            </Field>
-            <Field label="Телефон" half>
-              <Input value={form.accountant_phone} onChange={e => setForm(f => ({ ...f, accountant_phone: e.target.value }))} className={inputCls} />
-            </Field>
-            <Field label="Email" half>
-              <Input value={form.accountant_email} onChange={e => setForm(f => ({ ...f, accountant_email: e.target.value }))} className={inputCls} />
-            </Field>
-
-            {/* Контактное лицо */}
-            <SectionTitle>Контактное лицо</SectionTitle>
-            <Field label="ФИО">
-              <Input value={form.contact_name} onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))} className={inputCls} />
-            </Field>
-            <Field label="Телефон" half>
-              <Input value={form.contact_phone} onChange={e => setForm(f => ({ ...f, contact_phone: e.target.value }))} className={inputCls} />
-            </Field>
-            <Field label="Email" half>
-              <Input value={form.contact_email} onChange={e => setForm(f => ({ ...f, contact_email: e.target.value }))} className={inputCls} />
-            </Field>
-
-            {/* Базы данных клиента */}
-            <SectionTitle>Базы данных</SectionTitle>
-            <div className="col-span-2 space-y-2">
-              {clientDbs.map((row, idx) => (
-                <div key={idx} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-end">
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Конфигурация</label>
-                    <Select value={String(row.config_database_id || '')} onValueChange={v => updateDbRow(idx, 'config_database_id', v)}>
-                      <SelectTrigger className="bg-secondary/40 border-border h-8 text-sm">
-                        <SelectValue placeholder="Выбрать..." />
-                      </SelectTrigger>
-                      <SelectContent className="bg-card border-border">
-                        {configDbs.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.config_name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Текущая версия</label>
-                    <Input value={row.current_config_version || ''} onChange={e => updateDbRow(idx, 'current_config_version', e.target.value)} className={inputCls} placeholder="3.0.70" />
-                  </div>
-                  <div>
-                    <label className="text-xs text-muted-foreground mb-1 block">Дата обновления</label>
-                    <Input type="date" value={row.update_date || ''} onChange={e => updateDbRow(idx, 'update_date', e.target.value)} className={inputCls} />
-                  </div>
-                  <button onClick={() => removeDbRow(idx)} className="text-destructive hover:opacity-70 h-8 flex items-center">
-                    <Icon name="Trash2" size={15} />
+              {/* Вкладки */}
+              <div className="flex gap-1 px-6 pt-3 border-b border-border pb-0">
+                {ctabs.map(t => (
+                  <button key={t.id} onClick={() => setCtab(t.id)}
+                    className={`flex items-center gap-1.5 px-4 py-2 text-sm rounded-t-lg border-b-2 transition-all -mb-px ${
+                      ctab === t.id
+                        ? 'border-primary text-primary bg-primary/5 font-medium'
+                        : 'border-transparent text-muted-foreground hover:text-foreground'
+                    }`}>
+                    <Icon name={t.icon} size={14} />{t.label}
                   </button>
-                </div>
-              ))}
-              <Button type="button" variant="outline" size="sm" onClick={addDbRow} className="border-dashed border-border text-muted-foreground hover:text-foreground h-8 w-full">
-                <Icon name="Plus" size={14} className="mr-1" /> Добавить базу
-              </Button>
-            </div>
-          </div>
+                ))}
+              </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setModal({ open: false })} className="border-border">Отмена</Button>
-            <Button onClick={save} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
-              {saving ? 'Сохранение...' : 'Сохранить'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+              {/* Тело вкладок */}
+              <div className="px-6 py-4">
+
+                {/* ── Вкладка 1: Общие ── */}
+                {ctab === 'general' && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Наименование *">
+                      <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className={inputCls} />
+                    </Field>
+                    <Field label="Головная организация" half>
+                      <Select value={form.parent_id} onValueChange={v => setForm(f => ({ ...f, parent_id: v === '__none__' ? '' : v }))}>
+                        <SelectTrigger className="bg-secondary/40 border-border h-8 text-sm">
+                          <SelectValue placeholder="— нет —" />
+                        </SelectTrigger>
+                        <SelectContent className="bg-card border-border">
+                          <SelectItem value="__none__">— нет —</SelectItem>
+                          {clients.filter(c => c.id !== modal.item?.id).map(c => (
+                            <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="ИНН" half>
+                      <Input value={form.inn} onChange={e => setForm(f => ({ ...f, inn: e.target.value }))} className={inputCls} />
+                    </Field>
+                    <Field label="Активен" half>
+                      <div className="flex items-center h-8 gap-2">
+                        <Switch checked={form.is_active} onChange={v => setForm(f => ({ ...f, is_active: v }))} />
+                        <span className="text-sm text-muted-foreground">{form.is_active ? 'Да' : 'Нет'}</span>
+                      </div>
+                    </Field>
+                    <Field label="Адрес">
+                      <Input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className={inputCls} />
+                    </Field>
+                    <Field label="Логин" half>
+                      <Input value={form.login} onChange={e => setForm(f => ({ ...f, login: e.target.value }))} className={inputCls} />
+                    </Field>
+                    <Field label={modal.item ? 'Новый пароль' : 'Пароль'} half>
+                      <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className={inputCls} placeholder={modal.item ? 'Не менять' : ''} />
+                    </Field>
+                  </div>
+                )}
+
+                {/* ── Вкладка 2: Контакты ── */}
+                {ctab === 'contacts' && (
+                  <div className="grid grid-cols-3 gap-x-4 gap-y-3">
+                    {/* Заголовок-строка */}
+                    <div className="text-xs font-mono text-primary uppercase tracking-widest col-span-3 border-b border-border pb-1">Директор</div>
+                    <div><label className="text-xs text-muted-foreground mb-1 block">ФИО</label>
+                      <Input value={form.director_name} onChange={e => setForm(f => ({ ...f, director_name: e.target.value }))} className={inputCls} /></div>
+                    <div><label className="text-xs text-muted-foreground mb-1 block">Телефон</label>
+                      <Input value={form.director_phone} onChange={e => setForm(f => ({ ...f, director_phone: e.target.value }))} className={inputCls} /></div>
+                    <div><label className="text-xs text-muted-foreground mb-1 block">Email</label>
+                      <Input value={form.director_email} onChange={e => setForm(f => ({ ...f, director_email: e.target.value }))} className={inputCls} /></div>
+
+                    <div className="text-xs font-mono text-primary uppercase tracking-widest col-span-3 border-b border-border pb-1 pt-2">Бухгалтер</div>
+                    <div><label className="text-xs text-muted-foreground mb-1 block">ФИО</label>
+                      <Input value={form.accountant_name} onChange={e => setForm(f => ({ ...f, accountant_name: e.target.value }))} className={inputCls} /></div>
+                    <div><label className="text-xs text-muted-foreground mb-1 block">Телефон</label>
+                      <Input value={form.accountant_phone} onChange={e => setForm(f => ({ ...f, accountant_phone: e.target.value }))} className={inputCls} /></div>
+                    <div><label className="text-xs text-muted-foreground mb-1 block">Email</label>
+                      <Input value={form.accountant_email} onChange={e => setForm(f => ({ ...f, accountant_email: e.target.value }))} className={inputCls} /></div>
+
+                    <div className="text-xs font-mono text-primary uppercase tracking-widest col-span-3 border-b border-border pb-1 pt-2">Контактное лицо</div>
+                    <div><label className="text-xs text-muted-foreground mb-1 block">ФИО</label>
+                      <Input value={form.contact_name} onChange={e => setForm(f => ({ ...f, contact_name: e.target.value }))} className={inputCls} /></div>
+                    <div><label className="text-xs text-muted-foreground mb-1 block">Телефон</label>
+                      <Input value={form.contact_phone} onChange={e => setForm(f => ({ ...f, contact_phone: e.target.value }))} className={inputCls} /></div>
+                    <div><label className="text-xs text-muted-foreground mb-1 block">Email</label>
+                      <Input value={form.contact_email} onChange={e => setForm(f => ({ ...f, contact_email: e.target.value }))} className={inputCls} /></div>
+                  </div>
+                )}
+
+                {/* ── Вкладка 3: Базы данных ── */}
+                {ctab === 'databases' && (
+                  <div className="space-y-2">
+                    {clientDbs.length === 0 && (
+                      <p className="text-sm text-muted-foreground py-2">Нет привязанных баз данных</p>
+                    )}
+                    {clientDbs.map((row, idx) => (
+                      <div key={idx} className="grid grid-cols-[1fr_130px_130px_auto] gap-2 items-end">
+                        <div><label className="text-xs text-muted-foreground mb-1 block">Конфигурация</label>
+                          <Select value={String(row.config_database_id || '')} onValueChange={v => updateDbRow(idx, 'config_database_id', v)}>
+                            <SelectTrigger className="bg-secondary/40 border-border h-8 text-sm">
+                              <SelectValue placeholder="Выбрать..." />
+                            </SelectTrigger>
+                            <SelectContent className="bg-card border-border">
+                              {configDbs.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.config_name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div><label className="text-xs text-muted-foreground mb-1 block">Версия</label>
+                          <Input value={row.current_config_version || ''} onChange={e => updateDbRow(idx, 'current_config_version', e.target.value)} className={inputCls} placeholder="3.0.71" /></div>
+                        <div><label className="text-xs text-muted-foreground mb-1 block">Дата обновл.</label>
+                          <Input type="date" value={row.update_date || ''} onChange={e => updateDbRow(idx, 'update_date', e.target.value)} className={inputCls} /></div>
+                        <button onClick={() => removeDbRow(idx)} className="text-destructive hover:opacity-70 h-8 flex items-center mt-4">
+                          <Icon name="Trash2" size={15} />
+                        </button>
+                      </div>
+                    ))}
+                    <Button type="button" variant="outline" size="sm" onClick={addDbRow}
+                      className="border-dashed border-border text-muted-foreground hover:text-foreground h-8 w-full mt-1">
+                      <Icon name="Plus" size={14} className="mr-1" /> Добавить базу
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <DialogFooter className="px-6 pb-5 pt-2 border-t border-border">
+                <Button variant="outline" onClick={() => setModal({ open: false })} className="border-border">Отмена</Button>
+                <Button onClick={save} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                  {saving ? 'Сохранение...' : 'Сохранить'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </div>
   );
 }
