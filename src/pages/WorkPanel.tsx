@@ -118,6 +118,9 @@ function FolderNode({
   );
 }
 
+const PANEL_WIDTH_KEY = 'wp_cred_panel_width';
+const DEFAULT_PANEL_W = 30;
+
 function CredentialsSection() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
@@ -131,13 +134,52 @@ function CredentialsSection() {
   const [modalVal, setModalVal] = useState('');
   const [moveTo, setMoveTo] = useState<string>('');
   const ctxRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isResizing = useRef(false);
+
+  const savedW = parseFloat(localStorage.getItem(PANEL_WIDTH_KEY) || String(DEFAULT_PANEL_W));
+  const [panelW, setPanelW] = useState<number>(isNaN(savedW) ? DEFAULT_PANEL_W : savedW);
+
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    isResizing.current = true;
+    const onMove = (ev: MouseEvent) => {
+      if (!isResizing.current || !containerRef.current) return;
+      const rect = containerRef.current.getBoundingClientRect();
+      const pct = ((ev.clientX - rect.left) / rect.width) * 100;
+      const clamped = Math.min(Math.max(pct, 15), 60);
+      setPanelW(clamped);
+    };
+    const onUp = () => {
+      isResizing.current = false;
+      setPanelW(prev => { localStorage.setItem(PANEL_WIDTH_KEY, String(prev)); return prev; });
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
 
   const loadFolders = () => api('resource=folders').then(d => { if (Array.isArray(d)) setFolders(d); });
-  const loadCreds = (fid: number) => api(`resource=credentials&folder_id=${fid}`).then(d => { if (Array.isArray(d)) setCreds(d); });
+
+  const selectCredData = (c: Credential) => {
+    setSelectedCred(c);
+    setForm({ folder_id: c.folder_id, name: c.name, login: c.login || '', password: c.password || '', login1: c.login1 || '', password1: c.password1 || '', login2: c.login2 || '', password2: c.password2 || '', login3: c.login3 || '', password3: c.password3 || '', ip: c.ip || '', notes: c.notes || '' });
+    setDirty(false);
+  };
+  const selectCred = selectCredData;
+
+  const loadCreds = (fid: number) => api(`resource=credentials&folder_id=${fid}`).then(d => {
+    if (Array.isArray(d)) {
+      setCreds(d);
+      if (d.length > 0) selectCredData(d[0]);
+      else { setSelectedCred(null); setForm(EMPTY_CRED); setDirty(false); }
+    }
+  });
 
   useEffect(() => { loadFolders(); }, []);
   useEffect(() => {
-    if (selectedFolder !== null) { loadCreds(selectedFolder); setSelectedCred(null); setForm(EMPTY_CRED); setDirty(false); }
+    if (selectedFolder !== null) { loadCreds(selectedFolder); }
   }, [selectedFolder]);
 
   useEffect(() => {
@@ -145,12 +187,6 @@ function CredentialsSection() {
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, []);
-
-  const selectCred = (c: Credential) => {
-    setSelectedCred(c);
-    setForm({ folder_id: c.folder_id, name: c.name, login: c.login || '', password: c.password || '', login1: c.login1 || '', password1: c.password1 || '', login2: c.login2 || '', password2: c.password2 || '', login3: c.login3 || '', password3: c.password3 || '', ip: c.ip || '', notes: c.notes || '' });
-    setDirty(false);
-  };
 
   const newCred = () => {
     setSelectedCred(null);
@@ -208,9 +244,9 @@ function CredentialsSection() {
   const F_W = 'w-[24ch] h-7 bg-secondary/40 border-border text-sm font-mono px-2';
 
   return (
-    <div className="flex gap-0 h-[calc(100vh-120px)]">
+    <div ref={containerRef} className="flex gap-0 h-[calc(100vh-120px)] relative select-none">
       {/* Левая панель — дерево */}
-      <div className="w-[30%] border-r border-border flex flex-col">
+      <div className="border-r border-border flex flex-col shrink-0" style={{ width: `${panelW}%` }}>
         <div className="p-2 border-b border-border flex gap-1">
           <Input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Фильтр разделов..." className="h-7 text-xs bg-secondary/40 border-border" />
           <Button size="icon" variant="outline" className="h-7 w-7 shrink-0 border-border" title="Новый корневой раздел" onClick={() => { setModalVal(''); setModal({ type: 'create', folder: undefined }); }}>
@@ -224,6 +260,13 @@ function CredentialsSection() {
           ))}
         </div>
       </div>
+
+      {/* Ресайзер */}
+      <div
+        onMouseDown={startResize}
+        className="w-1 shrink-0 cursor-col-resize hover:bg-primary/40 active:bg-primary/60 transition-colors z-10"
+        title="Перетащите для изменения ширины"
+      />
 
       {/* Контекстное меню */}
       {ctxMenu && (
