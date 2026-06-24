@@ -66,6 +66,7 @@ type User = { id: number; login: string; is_active: boolean; phone: string; desc
 function UsersSection() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [modal, setModal] = useState<{ open: boolean; item?: User }>({ open: false });
   const [form, setForm] = useState({ login: '', password: '', is_active: true, phone: '', description: '' });
   const [saving, setSaving] = useState(false);
@@ -104,13 +105,25 @@ function UsersSection() {
     load();
   };
 
+  const q = search.toLowerCase();
+  const filtered = users.filter(u =>
+    u.login.toLowerCase().includes(q) ||
+    (u.phone || '').toLowerCase().includes(q) ||
+    (u.description || '').toLowerCase().includes(q)
+  );
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <h2 className="font-display text-xl uppercase">Пользователи</h2>
         <Button size="sm" onClick={openAdd} className="bg-primary text-primary-foreground hover:bg-primary/90 h-8">
           <Icon name="Plus" size={15} className="mr-1" /> Добавить
         </Button>
+      </div>
+
+      <div className="relative mb-3">
+        <Icon name="Search" size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по логину, телефону..." className="pl-8 h-8 text-sm bg-secondary/40 border-border" />
       </div>
 
       {loading ? <Spinner /> : (
@@ -124,10 +137,10 @@ function UsersSection() {
               </tr>
             </thead>
             <tbody>
-              {users.length === 0 && (
-                <tr><td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">Нет пользователей</td></tr>
+              {filtered.length === 0 && (
+                <tr><td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">{search ? 'Ничего не найдено' : 'Нет пользователей'}</td></tr>
               )}
-              {users.map(u => (
+              {filtered.map(u => (
                 <tr key={u.id} className="border-t border-border hover:bg-secondary/30 transition-colors">
                   <td className="px-3 py-2 font-mono text-xs">{u.login}</td>
                   <td className="px-3 py-2 text-muted-foreground">{u.phone || '—'}</td>
@@ -195,6 +208,7 @@ type ConfigDB = { id: number; config_name: string; min_platform_version: string;
 function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }) {
   const [dbs, setDbs] = useState<ConfigDB[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
   const [modal, setModal] = useState<{ open: boolean; item?: ConfigDB }>({ open: false });
   const [form, setForm] = useState({ config_name: '', min_platform_version: '', actual_config_version: '', update_release_date: '' });
   const [saving, setSaving] = useState(false);
@@ -234,13 +248,23 @@ function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }
     load();
   };
 
+  const filteredDbs = dbs.filter(d =>
+    !search || d.config_name.toLowerCase().includes(search.toLowerCase()) ||
+    (d.actual_config_version || '').includes(search)
+  );
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <h2 className="font-display text-xl uppercase">Базы данных (конфигурации)</h2>
         <Button size="sm" onClick={openAdd} className="bg-primary text-primary-foreground hover:bg-primary/90 h-8">
           <Icon name="Plus" size={15} className="mr-1" /> Добавить
         </Button>
+      </div>
+
+      <div className="relative mb-3">
+        <Icon name="Search" size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по названию конфигурации, версии..." className="pl-8 h-8 text-sm bg-secondary/40 border-border" />
       </div>
 
       {loading ? <Spinner /> : (
@@ -254,10 +278,10 @@ function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }
               </tr>
             </thead>
             <tbody>
-              {dbs.length === 0 && (
-                <tr><td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">Нет конфигураций</td></tr>
+              {filteredDbs.length === 0 && (
+                <tr><td colSpan={5} className="text-center py-8 text-muted-foreground text-sm">{search ? 'Ничего не найдено' : 'Нет конфигураций'}</td></tr>
               )}
-              {dbs.map(d => (
+              {filteredDbs.map(d => (
                 <tr key={d.id} className="border-t border-border hover:bg-secondary/30 transition-colors">
                   <td className="px-3 py-2 font-medium">{d.config_name}</td>
                   <td className="px-3 py-2 font-mono text-xs text-muted-foreground">{d.min_platform_version || '—'}</td>
@@ -332,6 +356,8 @@ const emptyClient = {
 function ClientsSection({ configDbs }: { configDbs: ConfigDB[] }) {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [filterActive, setFilterActive] = useState<'all' | 'active' | 'blocked'>('all');
   const [modal, setModal] = useState<{ open: boolean; item?: Client }>({ open: false });
   const [form, setForm] = useState<typeof emptyClient>(emptyClient);
   const [clientDbs, setClientDbs] = useState<ClientDB[]>([]);
@@ -422,9 +448,25 @@ function ClientsSection({ configDbs }: { configDbs: ConfigDB[] }) {
     }));
   };
 
+  // Фильтрация
+  const q = search.toLowerCase();
+  const visibleClients = clients.filter(c => {
+    const matchSearch = !q ||
+      c.name.toLowerCase().includes(q) ||
+      (c.inn || '').includes(q) ||
+      (c.login || '').toLowerCase().includes(q) ||
+      (c.director_name || '').toLowerCase().includes(q) ||
+      (c.director_phone || '').includes(q);
+    const matchActive =
+      filterActive === 'all' ||
+      (filterActive === 'active' && c.is_active) ||
+      (filterActive === 'blocked' && !c.is_active);
+    return matchSearch && matchActive;
+  });
+
   // Build tree: roots + children
-  const roots = clients.filter(c => !c.parent_id);
-  const children = (parentId: number) => clients.filter(c => c.parent_id === parentId);
+  const roots = visibleClients.filter(c => !c.parent_id);
+  const children = (parentId: number) => visibleClients.filter(c => c.parent_id === parentId);
 
   const renderRow = (c: Client, depth = 0) => {
     const hasChildren = children(c.id).length > 0;
@@ -465,11 +507,26 @@ function ClientsSection({ configDbs }: { configDbs: ConfigDB[] }) {
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-3">
         <h2 className="font-display text-xl uppercase">Клиенты</h2>
         <Button size="sm" onClick={openAdd} className="bg-primary text-primary-foreground hover:bg-primary/90 h-8">
           <Icon name="Plus" size={15} className="mr-1" /> Добавить
         </Button>
+      </div>
+
+      <div className="flex gap-2 mb-3">
+        <div className="relative flex-1">
+          <Icon name="Search" size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по названию, ИНН, логину, директору..." className="pl-8 h-8 text-sm bg-secondary/40 border-border" />
+        </div>
+        <div className="flex rounded-lg border border-border overflow-hidden">
+          {([['all', 'Все'], ['active', 'Активные'], ['blocked', 'Блок.']] as const).map(([v, l]) => (
+            <button key={v} onClick={() => setFilterActive(v)}
+              className={`px-3 h-8 text-xs transition-colors ${filterActive === v ? 'bg-primary text-primary-foreground' : 'bg-secondary/40 text-muted-foreground hover:text-foreground'}`}>
+              {l}
+            </button>
+          ))}
+        </div>
       </div>
 
       {loading ? <Spinner /> : (
@@ -483,11 +540,11 @@ function ClientsSection({ configDbs }: { configDbs: ConfigDB[] }) {
               </tr>
             </thead>
             <tbody>
-              {clients.length === 0 && (
-                <tr><td colSpan={6} className="text-center py-8 text-muted-foreground text-sm">Нет клиентов</td></tr>
+              {visibleClients.length === 0 && (
+                <tr><td colSpan={6} className="text-center py-8 text-muted-foreground text-sm">{search || filterActive !== 'all' ? 'Ничего не найдено' : 'Нет клиентов'}</td></tr>
               )}
               {roots.flatMap(c => renderRow(c))}
-              {clients.filter(c => c.parent_id && !roots.find(r => r.id === c.parent_id)).map(c => renderRow(c)[0])}
+              {visibleClients.filter(c => c.parent_id && !roots.find(r => r.id === c.parent_id)).map(c => renderRow(c)[0])}
             </tbody>
           </table>
         </div>
@@ -693,7 +750,7 @@ type Tab = 'users' | 'clients' | 'databases';
 
 export default function Admin() {
   const [authed, setAuthed] = useState(false);
-  const [tab, setTab] = useState<Tab>('clients');
+  const [tab, setTab] = useState<Tab>('users');
   const [configDbs, setConfigDbs] = useState<ConfigDB[]>([]);
 
   useEffect(() => {
@@ -717,8 +774,8 @@ export default function Admin() {
   if (!authed) return <AdminLogin onLogin={() => setAuthed(true)} />;
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'clients', label: 'Клиенты', icon: 'Building2' },
     { id: 'users', label: 'Пользователи', icon: 'Users' },
+    { id: 'clients', label: 'Клиенты', icon: 'Building2' },
     { id: 'databases', label: 'Базы данных', icon: 'Database' },
   ];
 
