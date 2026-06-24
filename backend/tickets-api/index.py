@@ -297,7 +297,10 @@ def handler(event: dict, context) -> dict:
                    SELECT id FROM {SCHEMA}.clients
                    WHERE parent_id = {client_id_from_token} AND is_active = TRUE
                )
-            ORDER BY c.name, db.config_name
+            ORDER BY
+                CASE WHEN cd.client_id = {client_id_from_token} THEN 0 ELSE 1 END,
+                c.name,
+                db.config_name
         """)
         rows = cur.fetchall()
         cur.close()
