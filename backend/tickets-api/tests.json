@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/?resource=tickets",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Неверный логин клиента",
+      "method": "POST",
+      "path": "/?resource=client-login",
+      "body": {"login": "noone", "password": "wrong"},
+      "expectedStatus": 401
+    },
+    {
+      "name": "Получить заявки без токена",
+      "method": "GET",
+      "path": "/?resource=tickets",
+      "expectedStatus": 401
+    }
+  ]
+}

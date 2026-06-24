@@ -1,4 +1,5 @@
 {
+  "tickets-api": "https://functions.poehali.dev/4866cc97-c798-42d4-a280-d35071d704a8",
   "work-panel-api": "https://functions.poehali.dev/448dd00e-0d3a-4719-8808-375730e12b42",
   "admin-api": "https://functions.poehali.dev/b27360bd-f3d5-47be-87bd-a7bec06b9be0",
   "admin-auth": "https://functions.poehali.dev/115d85ec-a990-4455-824d-27487ad441c1"

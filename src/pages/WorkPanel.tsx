@@ -13,6 +13,7 @@ import {
 
 const AUTH_URL = 'https://functions.poehali.dev/115d85ec-a990-4455-824d-27487ad441c1';
 const API_URL = 'https://functions.poehali.dev/448dd00e-0d3a-4719-8808-375730e12b42';
+const TICKETS_URL = 'https://functions.poehali.dev/4866cc97-c798-42d4-a280-d35071d704a8';
 const TOKEN_KEY = 'admin_token';
 
 function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
@@ -638,14 +639,312 @@ function UpdatesSection() {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// TICKETS SECTION (заглушка)
+// TICKETS SECTION
 // ══════════════════════════════════════════════════════════════════════════════
 
-function TicketsSection() {
+const PRIORITY_LABELS: Record<string, { label: string; color: string }> = {
+  low:    { label: 'Низкий',  color: 'text-muted-foreground' },
+  medium: { label: 'Средний', color: 'text-blue-400' },
+  high:   { label: 'Высокий', color: 'text-yellow-400' },
+  urgent: { label: 'Срочно',  color: 'text-red-400' },
+};
+
+const STATUS_LABELS: Record<string, { label: string; color: string; icon: string }> = {
+  new:         { label: 'Новая',      color: 'text-blue-400',            icon: 'CircleDot' },
+  in_progress: { label: 'В процессе', color: 'text-yellow-400',          icon: 'Loader' },
+  resolved:    { label: 'Решена',     color: 'text-green-400',           icon: 'CheckCircle' },
+  cancelled:   { label: 'Отменена',   color: 'text-muted-foreground',    icon: 'XCircle' },
+};
+
+const STATUSES_LIST = [
+  { value: 'new',         label: 'Новая' },
+  { value: 'in_progress', label: 'В процессе' },
+  { value: 'resolved',    label: 'Решена' },
+  { value: 'cancelled',   label: 'Отменена' },
+];
+
+const PROBLEM_TYPES = [
+  'Вопрос по 1С', 'Проблема с доступом', 'Нужно обновление',
+  'Ошибка при работе', 'Нужна доработка', 'Нужна консультация',
+  'Проблемы с оборудованием', 'Прочее',
+];
+
+type Ticket = {
+  id: number;
+  client_id: number;
+  client_name: string;
+  submitted_at: string;
+  priority: string;
+  problem_type: string;
+  description: string;
+  deadline: string | null;
+  extra_info: string | null;
+  result: string | null;
+  status: string;
+  resolved_at: string | null;
+  status_changed_at: string;
+  assignee_id: number | null;
+  assignee_name: string | null;
+  assignee_login: string | null;
+};
+
+type TicketMeta = {
+  clients: { id: number; name: string }[];
+  users: { id: number; full_name: string | null; login: string }[];
+  problem_types: string[];
+  priorities: string[];
+};
+
+function isOverdue(t: Ticket) {
+  return !t.resolved_at && t.deadline && new Date(t.deadline) < new Date();
+}
+
+function TicketsSection({ token }: { token: string }) {
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [meta, setMeta] = useState<TicketMeta | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [filterStatus, setFilterStatus] = useState('');
+  const [filterClient, setFilterClient] = useState('');
+  const [filterType, setFilterType] = useState('');
+  const [editModal, setEditModal] = useState<Ticket | null>(null);
+  const [editForm, setEditForm] = useState({ status: '', assignee_id: '', result: '' });
+  const [saving, setSaving] = useState(false);
+  const [detailModal, setDetailModal] = useState<Ticket | null>(null);
+
+  const apiHeaders = { 'X-Admin-Token': token };
+
+  const load = async () => {
+    setLoading(true);
+    const params = new URLSearchParams({ resource: 'tickets' });
+    if (filterStatus) params.set('status', filterStatus);
+    if (filterClient) params.set('client_id', filterClient);
+    if (filterType) params.set('problem_type', filterType);
+    const data = await fetch(`${TICKETS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json());
+    setLoading(false);
+    if (Array.isArray(data)) setTickets(data);
+  };
+
+  const loadMeta = async () => {
+    const data = await fetch(`${TICKETS_URL}?resource=ticket-meta`, { headers: apiHeaders }).then(r => r.json());
+    if (data.clients) setMeta(data);
+  };
+
+  useEffect(() => { loadMeta(); }, []);
+  useEffect(() => { load(); }, [filterStatus, filterClient, filterType]);
+
+  const openEdit = (t: Ticket) => {
+    setEditForm({
+      status: t.status,
+      assignee_id: t.assignee_id ? String(t.assignee_id) : '',
+      result: t.result || '',
+    });
+    setEditModal(t);
+  };
+
+  const saveEdit = async () => {
+    if (!editModal) return;
+    setSaving(true);
+    const body: Record<string, string | number | null> = {
+      status: editForm.status,
+      assignee_id: editForm.assignee_id ? Number(editForm.assignee_id) : null,
+      result: editForm.result,
+    };
+    await fetch(`${TICKETS_URL}?resource=tickets&id=${editModal.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify(body),
+    });
+    setSaving(false);
+    setEditModal(null);
+    load();
+  };
+
   return (
-    <div className="flex flex-col items-center justify-center h-64 text-muted-foreground gap-3">
-      <Icon name="TicketCheck" size={48} className="opacity-20" />
-      <p className="text-sm">Раздел «Заявки клиентов» в разработке</p>
+    <div>
+      {/* Фильтры */}
+      <div className="flex flex-wrap gap-3 mb-5">
+        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+          className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+          <option value="">Все статусы</option>
+          {STATUSES_LIST.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+        </select>
+        <select value={filterClient} onChange={e => setFilterClient(e.target.value)}
+          className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+          <option value="">Все клиенты</option>
+          {meta?.clients.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+        </select>
+        <select value={filterType} onChange={e => setFilterType(e.target.value)}
+          className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+          <option value="">Все типы</option>
+          {PROBLEM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+        </select>
+        <button onClick={load} className="h-8 px-3 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+          <Icon name="RefreshCw" size={12} />
+        </button>
+        <span className="ml-auto text-xs text-muted-foreground self-center">{tickets.length} заявок</span>
+      </div>
+
+      {/* Таблица */}
+      {loading ? (
+        <div className="flex items-center justify-center h-40 text-muted-foreground">
+          <Icon name="Loader" size={18} className="animate-spin mr-2" /> Загрузка...
+        </div>
+      ) : tickets.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+          <Icon name="TicketCheck" size={36} className="opacity-20" />
+          <p className="text-sm">Заявок не найдено</p>
+        </div>
+      ) : (
+        <div className="overflow-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-border">
+                {['#', 'Клиент', 'Тип', 'Описание', 'Приоритет', 'Статус', 'Подана', 'Решить до', 'Ответственный', ''].map(h => (
+                  <th key={h} className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {tickets.map(t => {
+                const st = STATUS_LABELS[t.status] || STATUS_LABELS.new;
+                const pr = PRIORITY_LABELS[t.priority] || PRIORITY_LABELS.medium;
+                const overdue = isOverdue(t);
+                return (
+                  <tr key={t.id} className={`border-b border-border/50 transition-colors ${overdue ? 'bg-red-500/8 hover:bg-red-500/12' : 'hover:bg-secondary/30'}`}>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground">#{t.id}</td>
+                    <td className="px-3 py-2.5 font-medium whitespace-nowrap">{t.client_name}</td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{t.problem_type}</td>
+                    <td className="px-3 py-2.5 max-w-[220px]">
+                      <p className={`truncate text-sm ${overdue ? 'text-red-400 font-bold' : ''}`}>{t.description}</p>
+                    </td>
+                    <td className={`px-3 py-2.5 text-xs font-medium whitespace-nowrap ${pr.color}`}>{pr.label}</td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <span className={`flex items-center gap-1 text-xs font-medium ${st.color}`}>
+                        <Icon name={st.icon} size={12} /> {st.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{new Date(t.submitted_at).toLocaleString('ru')}</td>
+                    <td className={`px-3 py-2.5 text-xs whitespace-nowrap ${overdue ? 'text-red-400 font-bold' : 'text-muted-foreground'}`}>
+                      {t.deadline ? new Date(t.deadline).toLocaleString('ru') : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                      {t.assignee_name || t.assignee_login || '—'}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex gap-1.5 justify-end">
+                        <Button size="sm" className="h-7 text-xs bg-secondary/60 text-foreground border border-border hover:bg-secondary" onClick={() => setDetailModal(t)}>
+                          <Icon name="Eye" size={12} />
+                        </Button>
+                        <Button size="sm" className="h-7 text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => openEdit(t)}>
+                          <Icon name="Pencil" size={12} />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Модал редактирования */}
+      <Dialog open={!!editModal} onOpenChange={() => setEditModal(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase tracking-wide">Заявка #{editModal?.id}</DialogTitle>
+          </DialogHeader>
+          {editModal && (
+            <div className="space-y-4 text-sm">
+              <div className="p-3 rounded-lg bg-secondary/30 text-xs space-y-1">
+                <p><span className="text-muted-foreground">Клиент:</span> {editModal.client_name}</p>
+                <p><span className="text-muted-foreground">Тип:</span> {editModal.problem_type}</p>
+                <p><span className="text-muted-foreground">Описание:</span> {editModal.description}</p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Статус</label>
+                <select value={editForm.status} onChange={e => setEditForm(f => ({ ...f, status: e.target.value }))}
+                  className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                  {STATUSES_LIST.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Ответственный</label>
+                <select value={editForm.assignee_id} onChange={e => setEditForm(f => ({ ...f, assignee_id: e.target.value }))}
+                  className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                  <option value="">— не назначен —</option>
+                  {meta?.users.map(u => <option key={u.id} value={String(u.id)}>{u.full_name || u.login}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Результат</label>
+                <Textarea value={editForm.result} onChange={e => setEditForm(f => ({ ...f, result: e.target.value }))}
+                  rows={4} className="bg-secondary/40 border-border resize-none text-sm" placeholder="Описание результата работы по заявке..." />
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" onClick={() => setEditModal(null)} className="flex-1">Отмена</Button>
+                <Button disabled={saving} onClick={saveEdit} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90">
+                  {saving ? 'Сохранение...' : 'Сохранить'}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Модал просмотра */}
+      <Dialog open={!!detailModal} onOpenChange={() => setDetailModal(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase tracking-wide">Заявка #{detailModal?.id} — {detailModal?.client_name}</DialogTitle>
+          </DialogHeader>
+          {detailModal && (() => {
+            const t = detailModal;
+            const st = STATUS_LABELS[t.status] || STATUS_LABELS.new;
+            const pr = PRIORITY_LABELS[t.priority] || PRIORITY_LABELS.medium;
+            const overdue = isOverdue(t);
+            return (
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className={`flex items-center gap-1.5 font-medium ${st.color}`}><Icon name={st.icon} size={14} /> {st.label}</span>
+                  <span className={`font-medium ${pr.color}`}>{pr.label}</span>
+                  {overdue && <span className="text-red-500 font-bold text-xs">⚠ Просрочена</span>}
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div><span className="text-muted-foreground">Подана:</span> {new Date(t.submitted_at).toLocaleString('ru')}</div>
+                  <div><span className="text-muted-foreground">Тип:</span> {t.problem_type}</div>
+                  {t.deadline && <div><span className="text-muted-foreground">Решить до:</span> <span className={overdue ? 'text-red-400 font-semibold' : ''}>{new Date(t.deadline).toLocaleString('ru')}</span></div>}
+                  {t.resolved_at && <div><span className="text-muted-foreground">Дата решения:</span> <span className="text-green-400">{new Date(t.resolved_at).toLocaleString('ru')}</span></div>}
+                  {(t.assignee_name || t.assignee_login) && <div><span className="text-muted-foreground">Ответственный:</span> {t.assignee_name || t.assignee_login}</div>}
+                  <div><span className="text-muted-foreground">Статус изменён:</span> {new Date(t.status_changed_at).toLocaleString('ru')}</div>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">Описание:</p>
+                  <p className="bg-secondary/30 rounded-md p-3 whitespace-pre-wrap text-sm">{t.description}</p>
+                </div>
+                {t.extra_info && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Доп. информация:</p>
+                    <p className="bg-secondary/30 rounded-md p-3 whitespace-pre-wrap text-sm">{t.extra_info}</p>
+                  </div>
+                )}
+                {t.result && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Результат:</p>
+                    <p className="bg-green-500/10 border border-green-500/20 rounded-md p-3 whitespace-pre-wrap text-sm text-green-300">{t.result}</p>
+                  </div>
+                )}
+                <div className="flex gap-3 pt-1">
+                  <Button variant="outline" onClick={() => setDetailModal(null)} className="flex-1">Закрыть</Button>
+                  <Button className="flex-1 bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => { setDetailModal(null); openEdit(t); }}>
+                    <Icon name="Pencil" size={13} className="mr-1.5" /> Редактировать
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -791,7 +1090,7 @@ export default function WorkPanel() {
         )}
         {tab === 'tickets' && (
           <div className="container py-6">
-            <TicketsSection />
+            <TicketsSection token={localStorage.getItem(TOKEN_KEY) || ''} />
           </div>
         )}
       </main>
