@@ -793,9 +793,16 @@ function TicketsSection({ token }: { token: string }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [meta, setMeta] = useState<TicketMeta | null>(null);
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterStatuses, setFilterStatuses] = useState<Set<string>>(new Set());
   const [filterClient, setFilterClient] = useState('');
   const [filterType, setFilterType] = useState('');
+
+  const toggleStatus = (val: string) =>
+    setFilterStatuses(prev => {
+      const next = new Set(prev);
+      if (next.has(val)) { next.delete(val); } else { next.add(val); }
+      return next;
+    });
   const [editModal, setEditModal] = useState<Ticket | null>(null);
   const [editForm, setEditForm] = useState({ status: '', assignee_id: '', result: '' });
   const [saving, setSaving] = useState(false);
@@ -806,7 +813,7 @@ function TicketsSection({ token }: { token: string }) {
   const load = async () => {
     setLoading(true);
     const params = new URLSearchParams({ resource: 'tickets' });
-    if (filterStatus) params.set('status', filterStatus);
+    if (filterStatuses.size > 0) params.set('status', [...filterStatuses].join(','));
     if (filterClient) params.set('client_id', filterClient);
     if (filterType) params.set('problem_type', filterType);
     const data = await fetch(`${TICKETS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json());
@@ -820,7 +827,7 @@ function TicketsSection({ token }: { token: string }) {
   };
 
   useEffect(() => { loadMeta(); }, []);
-  useEffect(() => { load(); }, [filterStatus, filterClient, filterType]);
+  useEffect(() => { load(); }, [filterStatuses, filterClient, filterType]);
 
   const openEdit = (t: Ticket) => {
     setEditForm({
@@ -853,11 +860,17 @@ function TicketsSection({ token }: { token: string }) {
     <div>
       {/* Фильтры */}
       <div className="flex flex-wrap gap-3 mb-5">
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
-          className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
-          <option value="">Все статусы</option>
-          {STATUSES_LIST.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
-        </select>
+        <div className="flex items-center gap-1.5 bg-secondary/30 border border-border rounded-md px-2 h-8">
+          {STATUSES_LIST.map(s => {
+            const active = filterStatuses.has(s.value);
+            return (
+              <button key={s.value} onClick={() => toggleStatus(s.value)}
+                className={`h-5 px-2 rounded text-xs font-medium transition-colors ${active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'}`}>
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
         <select value={filterClient} onChange={e => setFilterClient(e.target.value)}
           className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
           <option value="">Все клиенты</option>

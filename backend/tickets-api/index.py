@@ -282,8 +282,13 @@ def handler(event: dict, context) -> dict:
                 where_parts.append(f"t.client_id = {client_id_from_token}")
             if is_staff:
                 if qs.get('status'):
-                    s = qs['status'].replace("'", "''")
-                    where_parts.append(f"t.status = '{s}'")
+                    raw = qs['status']
+                    vals = [v.strip().replace("'", "''") for v in raw.split(',') if v.strip() in STATUSES]
+                    if len(vals) == 1:
+                        where_parts.append(f"t.status = '{vals[0]}'")
+                    elif len(vals) > 1:
+                        in_list = ', '.join(f"'{v}'" for v in vals)
+                        where_parts.append(f"t.status IN ({in_list})")
                 if qs.get('client_id'):
                     where_parts.append(f"t.client_id = {int(qs['client_id'])}")
                 if qs.get('problem_type'):
