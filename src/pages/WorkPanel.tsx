@@ -14,6 +14,7 @@ import {
 const AUTH_URL = 'https://functions.poehali.dev/115d85ec-a990-4455-824d-27487ad441c1';
 const API_URL = 'https://functions.poehali.dev/448dd00e-0d3a-4719-8808-375730e12b42';
 const TICKETS_URL = 'https://functions.poehali.dev/4866cc97-c798-42d4-a280-d35071d704a8';
+const TASKS_URL = 'https://functions.poehali.dev/98d6bd0b-ee47-46a8-9fdb-701e4c507b47';
 const TOKEN_KEY = 'admin_token';
 
 function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
@@ -1048,6 +1049,479 @@ function TicketsSection({ token }: { token: string }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// TASKS SECTION
+// ══════════════════════════════════════════════════════════════════════════════
+
+const TASK_STATUS_LABELS: Record<string, { label: string; color: string; icon: string }> = {
+  new:         { label: 'Новая',      color: 'text-blue-400',         icon: 'CircleDot' },
+  in_progress: { label: 'Выполняется', color: 'text-yellow-400',      icon: 'Loader' },
+  done:        { label: 'Завершена',  color: 'text-green-400',        icon: 'CheckCircle' },
+  cancelled:   { label: 'Отменена',   color: 'text-muted-foreground', icon: 'XCircle' },
+};
+
+const TASK_STATUSES_LIST = [
+  { value: 'new',         label: 'Новая' },
+  { value: 'in_progress', label: 'Выполняется' },
+  { value: 'done',        label: 'Завершена' },
+  { value: 'cancelled',   label: 'Отменена' },
+];
+
+const TASK_COLORS: { value: string; label: string; dot: string }[] = [
+  { value: 'blue',   label: 'Синий',    dot: 'bg-blue-500' },
+  { value: 'green',  label: 'Зелёный',  dot: 'bg-green-500' },
+  { value: 'yellow', label: 'Жёлтый',   dot: 'bg-yellow-500' },
+  { value: 'red',    label: 'Красный',  dot: 'bg-red-500' },
+  { value: 'purple', label: 'Фиолетовый', dot: 'bg-purple-500' },
+  { value: 'gray',   label: 'Серый',    dot: 'bg-gray-400' },
+];
+
+const REPEAT_LABELS: Record<string, string> = {
+  none: 'Не повторяется', daily: 'Ежедневно', weekly: 'Еженедельно', monthly: 'Ежемесячно', yearly: 'Ежегодно',
+};
+
+function colorDot(color: string) {
+  return TASK_COLORS.find(c => c.value === color)?.dot || 'bg-gray-400';
+}
+
+type TaskUser = { id: number; full_name: string | null; login: string };
+
+type Task = {
+  id: number;
+  title: string;
+  description: string | null;
+  status: string;
+  color: string;
+  due_date: string | null;
+  due_time: string | null;
+  all_day: boolean;
+  repeat_rule: string;
+  repeat_until: string | null;
+  author_id: number | null;
+  assignee_id: number | null;
+  author_name: string | null;
+  author_login: string | null;
+  assignee_name: string | null;
+  assignee_login: string | null;
+  created_at: string;
+  updated_at: string;
+  watchers: TaskUser[];
+};
+
+type TaskMeta = { users: TaskUser[]; statuses: string[]; colors: string[]; repeat_rules: string[] };
+
+const EMPTY_TASK_FORM = {
+  title: '', description: '', status: 'new', color: 'blue',
+  due_date: '', due_time: '', all_day: true,
+  repeat_rule: 'none', repeat_until: '',
+  assignee_id: '', watcher_ids: [] as number[],
+};
+
+function userLabel(u?: TaskUser | null) {
+  if (!u) return '—';
+  return u.full_name || u.login;
+}
+
+function isTaskOverdue(t: Task) {
+  if (t.status === 'done' || t.status === 'cancelled' || !t.due_date) return false;
+  const due = new Date(t.due_date + (t.due_time ? `T${t.due_time}` : 'T23:59:59'));
+  return due < new Date();
+}
+
+function TasksSection({ token }: { token: string }) {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [meta, setMeta] = useState<TaskMeta | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [filterStatuses, setFilterStatuses] = useState<Set<string>>(new Set());
+  const [filterAssignee, setFilterAssignee] = useState('');
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState('due_date');
+  const [order, setOrder] = useState<'asc' | 'desc'>('asc');
+
+  const [editModal, setEditModal] = useState<Task | 'new' | null>(null);
+  const [form, setForm] = useState(EMPTY_TASK_FORM);
+  const [saving, setSaving] = useState(false);
+  const [detailModal, setDetailModal] = useState<Task | null>(null);
+
+  const apiHeaders = { 'X-Admin-Token': token };
+
+  const toggleStatus = (val: string) =>
+    setFilterStatuses(prev => {
+      const next = new Set(prev);
+      if (next.has(val)) { next.delete(val); } else { next.add(val); }
+      return next;
+    });
+
+  const load = async () => {
+    setLoading(true);
+    const params = new URLSearchParams({ resource: 'tasks', sort, order });
+    if (filterStatuses.size > 0) params.set('status', [...filterStatuses].join(','));
+    if (filterAssignee) params.set('assignee_id', filterAssignee);
+    if (search) params.set('search', search);
+    const data = await fetch(`${TASKS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json());
+    setLoading(false);
+    if (Array.isArray(data)) setTasks(data);
+  };
+
+  const loadMeta = async () => {
+    const data = await fetch(`${TASKS_URL}?resource=task-meta`, { headers: apiHeaders }).then(r => r.json());
+    if (data.users) setMeta(data);
+  };
+
+  useEffect(() => { loadMeta(); }, []);
+  useEffect(() => { load(); }, [filterStatuses, filterAssignee, search, sort, order]);
+
+  const openNew = () => {
+    setForm(EMPTY_TASK_FORM);
+    setEditModal('new');
+  };
+
+  const openEdit = (t: Task) => {
+    setForm({
+      title: t.title,
+      description: t.description || '',
+      status: t.status,
+      color: t.color,
+      due_date: t.due_date || '',
+      due_time: t.due_time || '',
+      all_day: t.all_day,
+      repeat_rule: t.repeat_rule,
+      repeat_until: t.repeat_until || '',
+      assignee_id: t.assignee_id ? String(t.assignee_id) : '',
+      watcher_ids: t.watchers.map(w => w.id),
+    });
+    setEditModal(t);
+  };
+
+  const toggleWatcher = (id: number) => {
+    setForm(f => ({
+      ...f,
+      watcher_ids: f.watcher_ids.includes(id) ? f.watcher_ids.filter(w => w !== id) : [...f.watcher_ids, id],
+    }));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    const body: Record<string, unknown> = {
+      title: form.title,
+      description: form.description,
+      status: form.status,
+      color: form.color,
+      due_date: form.due_date || null,
+      due_time: form.all_day ? null : (form.due_time || null),
+      all_day: form.all_day,
+      repeat_rule: form.repeat_rule,
+      repeat_until: form.repeat_rule !== 'none' ? (form.repeat_until || null) : null,
+      assignee_id: form.assignee_id ? Number(form.assignee_id) : null,
+      watcher_ids: form.watcher_ids,
+    };
+    if (editModal === 'new') {
+      await fetch(`${TASKS_URL}?resource=tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+        body: JSON.stringify(body),
+      });
+    } else if (editModal) {
+      await fetch(`${TASKS_URL}?resource=tasks&id=${editModal.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+        body: JSON.stringify(body),
+      });
+    }
+    setSaving(false);
+    setEditModal(null);
+    load();
+  };
+
+  const changeStatus = async (t: Task, status: string) => {
+    await fetch(`${TASKS_URL}?resource=tasks&id=${t.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({ status }),
+    });
+    load();
+  };
+
+  const sortOptions = [
+    { value: 'due_date', label: 'По сроку' },
+    { value: 'created_at', label: 'По дате создания' },
+    { value: 'title', label: 'По названию' },
+    { value: 'status', label: 'По статусу' },
+  ];
+
+  return (
+    <div>
+      {/* Фильтры */}
+      <div className="flex flex-wrap gap-3 mb-5">
+        <div className="flex items-center gap-1.5 bg-secondary/30 border border-border rounded-md px-2 h-8">
+          {TASK_STATUSES_LIST.map(s => {
+            const active = filterStatuses.has(s.value);
+            return (
+              <button key={s.value} onClick={() => toggleStatus(s.value)}
+                className={`h-5 px-2 rounded text-xs font-medium transition-colors ${active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'}`}>
+                {s.label}
+              </button>
+            );
+          })}
+        </div>
+        <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
+          className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+          <option value="">Все ответственные</option>
+          {meta?.users.map(u => <option key={u.id} value={String(u.id)}>{userLabel(u)}</option>)}
+        </select>
+        <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по названию..."
+          className="h-8 w-48 text-xs bg-secondary/40 border-border" />
+        <select value={sort} onChange={e => setSort(e.target.value)}
+          className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+          {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <button onClick={() => setOrder(o => o === 'asc' ? 'desc' : 'asc')}
+          className="h-8 px-2 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+          <Icon name={order === 'asc' ? 'ArrowUp' : 'ArrowDown'} size={13} />
+        </button>
+        <Button onClick={openNew} size="sm" className="h-8 ml-auto bg-primary text-primary-foreground hover:bg-primary/90">
+          <Icon name="Plus" size={14} className="mr-1" /> Новая задача
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex items-center justify-center h-40 text-muted-foreground">
+          <Icon name="Loader" size={18} className="animate-spin mr-2" /> Загрузка...
+        </div>
+      ) : tasks.length === 0 ? (
+        <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
+          <Icon name="ListTodo" size={36} className="opacity-20" />
+          <p className="text-sm">Задач не найдено</p>
+        </div>
+      ) : (
+        <div className="overflow-auto">
+          <table className="w-full text-sm border-collapse">
+            <thead>
+              <tr className="border-b border-border">
+                {['', 'Название', 'Срок', 'Повтор', 'Статус', 'Ответственный', 'Автор', ''].map(h => (
+                  <th key={h} className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {tasks.map(t => {
+                const st = TASK_STATUS_LABELS[t.status] || TASK_STATUS_LABELS.new;
+                const overdue = isTaskOverdue(t);
+                return (
+                  <tr key={t.id} className={`border-b border-border/50 transition-colors ${overdue ? 'bg-red-500/8 hover:bg-red-500/12' : 'hover:bg-secondary/30'}`}>
+                    <td className="px-3 py-2.5">
+                      <span className={`inline-block w-2.5 h-2.5 rounded-full ${colorDot(t.color)}`} />
+                    </td>
+                    <td className="px-3 py-2.5 max-w-[240px]">
+                      <button className="text-left font-medium truncate hover:text-primary transition-colors" onClick={() => setDetailModal(t)}>
+                        {t.title}
+                      </button>
+                    </td>
+                    <td className={`px-3 py-2.5 text-xs whitespace-nowrap ${overdue ? 'text-red-400 font-bold' : 'text-muted-foreground'}`}>
+                      {t.due_date ? new Date(t.due_date).toLocaleDateString('ru') : '—'}
+                      {t.due_date && !t.all_day && t.due_time && <span> {t.due_time.slice(0, 5)}</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                      {t.repeat_rule !== 'none' ? REPEAT_LABELS[t.repeat_rule] : '—'}
+                    </td>
+                    <td className="px-3 py-2.5 whitespace-nowrap">
+                      <select value={t.status} onChange={e => changeStatus(t, e.target.value)}
+                        className={`bg-transparent text-xs font-medium focus:outline-none ${st.color}`}>
+                        {TASK_STATUSES_LIST.map(s => <option key={s.value} value={s.value} className="text-foreground bg-background">{s.label}</option>)}
+                      </select>
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                      {t.assignee_name || t.assignee_login || '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                      {t.author_name || t.author_login || '—'}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex gap-1.5 justify-end">
+                        <Button size="sm" className="h-7 text-xs bg-secondary/60 text-foreground border border-border hover:bg-secondary" onClick={() => setDetailModal(t)}>
+                          <Icon name="Eye" size={12} />
+                        </Button>
+                        <Button size="sm" className="h-7 text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => openEdit(t)}>
+                          <Icon name="Pencil" size={12} />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Модал создания/редактирования */}
+      <Dialog open={!!editModal} onOpenChange={() => setEditModal(null)}>
+        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase tracking-wide">
+              {editModal === 'new' ? 'Новая задача' : `Задача #${(editModal as Task)?.id ?? ''}`}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Наименование</label>
+              <Input value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+                className="bg-secondary/40 border-border text-sm" placeholder="Название задачи" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Описание</label>
+              <Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                rows={3} className="bg-secondary/40 border-border resize-none text-sm" placeholder="Описание задачи..." />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input type="checkbox" id="all_day" checked={form.all_day}
+                onChange={e => setForm(f => ({ ...f, all_day: e.target.checked }))}
+                className="w-4 h-4 accent-primary" />
+              <label htmlFor="all_day" className="text-xs text-muted-foreground">Весь день</label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Дата выполнения</label>
+                <input type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+                  className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+              </div>
+              {!form.all_day && (
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Время</label>
+                  <input type="time" value={form.due_time} onChange={e => setForm(f => ({ ...f, due_time: e.target.value }))}
+                    className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Повторение</label>
+                <select value={form.repeat_rule} onChange={e => setForm(f => ({ ...f, repeat_rule: e.target.value }))}
+                  className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                  {Object.entries(REPEAT_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+              </div>
+              {form.repeat_rule !== 'none' && (
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">Повторять до</label>
+                  <input type="date" value={form.repeat_until} onChange={e => setForm(f => ({ ...f, repeat_until: e.target.value }))}
+                    className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary" />
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Статус</label>
+                <select value={form.status} onChange={e => setForm(f => ({ ...f, status: e.target.value }))}
+                  className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                  {TASK_STATUSES_LIST.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Цвет</label>
+                <select value={form.color} onChange={e => setForm(f => ({ ...f, color: e.target.value }))}
+                  className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                  {TASK_COLORS.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Ответственный</label>
+              <select value={form.assignee_id} onChange={e => setForm(f => ({ ...f, assignee_id: e.target.value }))}
+                className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                <option value="">— не назначен —</option>
+                {meta?.users.map(u => <option key={u.id} value={String(u.id)}>{userLabel(u)}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Видят задачу</label>
+              <div className="flex flex-wrap gap-1.5">
+                {meta?.users.map(u => {
+                  const active = form.watcher_ids.includes(u.id);
+                  return (
+                    <button key={u.id} type="button" onClick={() => toggleWatcher(u.id)}
+                      className={`h-7 px-2.5 rounded-md text-xs transition-colors border ${active ? 'bg-primary text-primary-foreground border-primary' : 'bg-secondary/40 text-muted-foreground border-border hover:text-foreground'}`}>
+                      {userLabel(u)}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex gap-3 pt-1">
+              <Button variant="outline" onClick={() => setEditModal(null)} className="flex-1">Отмена</Button>
+              <Button disabled={saving || !form.title} onClick={save} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90">
+                {saving ? 'Сохранение...' : 'Сохранить'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Модал просмотра */}
+      <Dialog open={!!detailModal} onOpenChange={() => setDetailModal(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase tracking-wide flex items-center gap-2">
+              <span className={`inline-block w-2.5 h-2.5 rounded-full ${colorDot(detailModal?.color || 'blue')}`} />
+              {detailModal?.title}
+            </DialogTitle>
+          </DialogHeader>
+          {detailModal && (() => {
+            const t = detailModal;
+            const st = TASK_STATUS_LABELS[t.status] || TASK_STATUS_LABELS.new;
+            const overdue = isTaskOverdue(t);
+            return (
+              <div className="space-y-3 text-sm">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <span className={`flex items-center gap-1.5 font-medium ${st.color}`}><Icon name={st.icon} size={14} /> {st.label}</span>
+                  {overdue && <span className="text-red-500 font-bold text-xs">⚠ Просрочена</span>}
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div><span className="text-muted-foreground">Срок:</span> {t.due_date ? new Date(t.due_date).toLocaleDateString('ru') : '—'}{!t.all_day && t.due_time ? ` ${t.due_time.slice(0, 5)}` : ''}{t.all_day && t.due_date ? ' (весь день)' : ''}</div>
+                  <div><span className="text-muted-foreground">Повтор:</span> {REPEAT_LABELS[t.repeat_rule]}</div>
+                  <div><span className="text-muted-foreground">Ответственный:</span> {t.assignee_name || t.assignee_login || '—'}</div>
+                  <div><span className="text-muted-foreground">Автор:</span> {t.author_name || t.author_login || '—'}</div>
+                  <div><span className="text-muted-foreground">Создана:</span> {new Date(t.created_at).toLocaleString('ru')}</div>
+                  <div><span className="text-muted-foreground">Изменена:</span> {new Date(t.updated_at).toLocaleString('ru')}</div>
+                </div>
+                {t.watchers.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Видят задачу:</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {t.watchers.map(w => (
+                        <span key={w.id} className="px-2 py-0.5 rounded bg-secondary/40 text-xs">{userLabel(w)}</span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {t.description && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Описание:</p>
+                    <p className="bg-secondary/30 rounded-md p-3 whitespace-pre-wrap text-sm">{t.description}</p>
+                  </div>
+                )}
+                <div className="flex gap-3 pt-1">
+                  <Button variant="outline" onClick={() => setDetailModal(null)} className="flex-1">Закрыть</Button>
+                  <Button className="flex-1 bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => { setDetailModal(null); openEdit(t); }}>
+                    <Icon name="Pencil" size={13} className="mr-1.5" /> Редактировать
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // LOGIN
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1114,7 +1588,7 @@ function WorkLogin({ onLogin }: { onLogin: (info: AuthInfo) => void }) {
 // MAIN
 // ══════════════════════════════════════════════════════════════════════════════
 
-type Tab = 'credentials' | 'updates' | 'tickets';
+type Tab = 'credentials' | 'updates' | 'tickets' | 'tasks';
 
 export default function WorkPanel() {
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
@@ -1137,6 +1611,7 @@ export default function WorkPanel() {
     { id: 'credentials', label: 'Учётные данные', icon: 'Lock' },
     { id: 'updates', label: 'Обновления', icon: 'RefreshCw' },
     { id: 'tickets', label: 'Заявки клиентов', icon: 'TicketCheck' },
+    { id: 'tasks', label: 'Задачи', icon: 'ListTodo' },
   ];
 
   return (
@@ -1189,6 +1664,11 @@ export default function WorkPanel() {
         {tab === 'tickets' && (
           <div className="container py-6">
             <TicketsSection token={localStorage.getItem(TOKEN_KEY) || ''} />
+          </div>
+        )}
+        {tab === 'tasks' && (
+          <div className="container py-6">
+            <TasksSection token={localStorage.getItem(TOKEN_KEY) || ''} />
           </div>
         )}
       </main>
