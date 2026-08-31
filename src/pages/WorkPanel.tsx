@@ -520,7 +520,6 @@ function UpdatesSection() {
         <tbody>
           {(() => {
             // Группируем строки по клиентам
-            const parentIds = new Set(rows.filter(r => !r.client_parent_id).map(r => r.client_id));
             const childrenByParent = new Map<number, UpdateRow[]>();
             rows.forEach(r => {
               if (r.client_parent_id) {
@@ -545,24 +544,37 @@ function UpdatesSection() {
             let isFirst = true;
             parentGroups.forEach((groupRows, clientId) => {
               const children = childrenByParent.get(clientId) ?? [];
-              const hasChildren = children.length > 0;
+              const extraOwnDbs = groupRows.length - 1;
+              const hasChildren = children.length > 0 || extraOwnDbs > 0;
               const isExpanded = expandedClients.has(clientId);
+              const hiddenCount = extraOwnDbs + children.length;
 
               groupRows.forEach((row, rowIdx) => {
+                if (rowIdx > 0 && !isExpanded) return; // скрываем доп. базы клиента пока не раскрыто
                 const outdated = versionGt(row.actual_config_version, row.current_config_version);
                 result.push(
                   <tr key={row.client_db_id} className={`border-b border-border/50 transition-colors ${outdated ? 'bg-yellow-500/8 hover:bg-yellow-500/12' : 'hover:bg-secondary/30'} ${!isFirst && rowIdx === 0 ? 'border-t-2 border-t-border' : ''}`}>
                     <td className="px-3 py-2.5">
-                      <span className="flex items-center gap-1">
-                        {rowIdx === 0 && hasChildren ? (
-                          <button onClick={() => toggleClient(clientId)} className="flex items-center justify-center w-5 h-5 rounded hover:bg-secondary/60 shrink-0 transition-colors">
-                            <Icon name={isExpanded ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground" />
-                          </button>
-                        ) : (
-                          <span className="w-5 shrink-0" />
-                        )}
-                        <span className="font-medium">{row.client_name}</span>
-                      </span>
+                      {rowIdx === 0 ? (
+                        <span className="flex items-center gap-1">
+                          {hasChildren ? (
+                            <button onClick={() => toggleClient(clientId)} className="flex items-center justify-center w-5 h-5 rounded hover:bg-secondary/60 shrink-0 transition-colors">
+                              <Icon name={isExpanded ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground" />
+                            </button>
+                          ) : (
+                            <span className="w-5 shrink-0" />
+                          )}
+                          <span className="font-medium">{row.client_name}</span>
+                          {!isExpanded && hiddenCount > 0 && (
+                            <span className="text-[10px] text-muted-foreground bg-secondary/60 rounded px-1.5 py-0.5 ml-1">+{hiddenCount}</span>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 pl-6">
+                          <Icon name="Database" size={11} className="text-border shrink-0" />
+                          <span className="text-muted-foreground text-sm">{row.client_name}</span>
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2.5 text-muted-foreground">{row.config_name}</td>
                     <td className={`px-3 py-2.5 font-mono text-sm ${outdated ? 'text-yellow-400 font-semibold' : ''}`}>
@@ -588,36 +600,68 @@ function UpdatesSection() {
 
               // Дочерние клиенты — показываем только если раскрыт
               if (isExpanded && children.length > 0) {
+                // Группируем базы данных внутри каждого подчинённого клиента
+                const childGroups = new Map<number, UpdateRow[]>();
                 children.forEach(row => {
-                  const outdated = versionGt(row.actual_config_version, row.current_config_version);
-                  result.push(
-                    <tr key={row.client_db_id} className={`border-b border-border/40 transition-colors ${outdated ? 'bg-yellow-500/5 hover:bg-yellow-500/10' : 'hover:bg-secondary/20'}`}>
-                      <td className="pl-8 pr-3 py-2">
-                        <span className="flex items-center gap-1.5">
-                          <Icon name="CornerDownRight" size={12} className="text-border shrink-0" />
-                          <span className="text-muted-foreground text-sm">{row.client_name}</span>
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-muted-foreground text-sm">{row.config_name}</td>
-                      <td className={`px-3 py-2 font-mono text-sm ${outdated ? 'text-yellow-400 font-semibold' : ''}`}>
-                        {row.current_config_version || <span className="text-muted-foreground">—</span>}
-                        {outdated && <Icon name="AlertTriangle" size={13} className="inline ml-1.5 text-yellow-400" />}
-                      </td>
-                      <td className="px-3 py-2 font-mono text-sm text-green-400">{row.actual_config_version || '—'}</td>
-                      <td className="px-3 py-2 text-muted-foreground text-xs">{row.update_date || '—'}</td>
-                      <td className="px-3 py-2 text-muted-foreground text-xs">{row.updated_by_name || row.updated_by_login || '—'}</td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-1.5 justify-end">
-                          <Button size="sm" className="h-7 text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => openUpdate(row)}>
-                            <Icon name="RefreshCw" size={12} className="mr-1" /> Обновить
-                          </Button>
-                          <Button size="sm" variant="outline" className="h-7 text-xs border-border" onClick={() => openHistory(row)}>
-                            <Icon name="History" size={12} className="mr-1" /> История
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
+                  const arr = childGroups.get(row.client_id) ?? [];
+                  arr.push(row);
+                  childGroups.set(row.client_id, arr);
+                });
+
+                childGroups.forEach((childRows, childClientId) => {
+                  const extraChildDbs = childRows.length - 1;
+                  const hasExtraChildDbs = extraChildDbs > 0;
+                  const isChildExpanded = expandedClients.has(childClientId);
+
+                  childRows.forEach((row, cIdx) => {
+                    if (cIdx > 0 && !isChildExpanded) return;
+                    const outdated = versionGt(row.actual_config_version, row.current_config_version);
+                    result.push(
+                      <tr key={row.client_db_id} className={`border-b border-border/40 transition-colors ${outdated ? 'bg-yellow-500/5 hover:bg-yellow-500/10' : 'hover:bg-secondary/20'}`}>
+                        <td className="pl-8 pr-3 py-2">
+                          {cIdx === 0 ? (
+                            <span className="flex items-center gap-1.5">
+                              <Icon name="CornerDownRight" size={12} className="text-border shrink-0" />
+                              {hasExtraChildDbs ? (
+                                <button onClick={() => toggleClient(childClientId)} className="flex items-center justify-center w-4 h-4 rounded hover:bg-secondary/60 shrink-0 transition-colors">
+                                  <Icon name={isChildExpanded ? 'ChevronDown' : 'ChevronRight'} size={12} className="text-muted-foreground" />
+                                </button>
+                              ) : (
+                                <span className="w-4 shrink-0" />
+                              )}
+                              <span className="text-muted-foreground text-sm">{row.client_name}</span>
+                              {!isChildExpanded && hasExtraChildDbs && (
+                                <span className="text-[10px] text-muted-foreground bg-secondary/60 rounded px-1.5 py-0.5 ml-1">+{extraChildDbs}</span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1.5 pl-9">
+                              <Icon name="Database" size={11} className="text-border shrink-0" />
+                              <span className="text-muted-foreground text-sm">{row.client_name}</span>
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground text-sm">{row.config_name}</td>
+                        <td className={`px-3 py-2 font-mono text-sm ${outdated ? 'text-yellow-400 font-semibold' : ''}`}>
+                          {row.current_config_version || <span className="text-muted-foreground">—</span>}
+                          {outdated && <Icon name="AlertTriangle" size={13} className="inline ml-1.5 text-yellow-400" />}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-sm text-green-400">{row.actual_config_version || '—'}</td>
+                        <td className="px-3 py-2 text-muted-foreground text-xs">{row.update_date || '—'}</td>
+                        <td className="px-3 py-2 text-muted-foreground text-xs">{row.updated_by_name || row.updated_by_login || '—'}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex gap-1.5 justify-end">
+                            <Button size="sm" className="h-7 text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => openUpdate(row)}>
+                              <Icon name="RefreshCw" size={12} className="mr-1" /> Обновить
+                            </Button>
+                            <Button size="sm" variant="outline" className="h-7 text-xs border-border" onClick={() => openHistory(row)}>
+                              <Icon name="History" size={12} className="mr-1" /> История
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  });
                 });
               }
 
