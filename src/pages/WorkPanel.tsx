@@ -40,6 +40,10 @@ interface Credential {
   login1: string; password1: string; login2: string; password2: string;
   login3: string; password3: string; ip: string; notes: string;
 }
+interface CredFile {
+  id: number; credential_id: number; file_name: string; file_url: string;
+  file_size: number | null; content_type: string | null; created_at: string;
+}
 interface UpdateRow {
   client_db_id: number; client_id: number; client_parent_id: number | null; client_name: string;
   config_db_id: number; config_name: string;
@@ -69,6 +73,110 @@ function CopyBtn({ value }: { value: string }) {
     <button onClick={copy} title="Копировать" className={`p-1.5 rounded transition-colors ${copied ? 'text-green-400' : 'text-muted-foreground hover:text-foreground'}`}>
       <Icon name={copied ? 'Check' : 'Copy'} size={14} />
     </button>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// CREDENTIAL FILES
+// ══════════════════════════════════════════════════════════════════════════════
+
+function formatFileSize(bytes: number | null) {
+  if (!bytes) return '';
+  if (bytes < 1024) return `${bytes} Б`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+}
+
+function fileIconName(name: string) {
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'Image';
+  if (['pdf'].includes(ext)) return 'FileText';
+  if (['doc', 'docx'].includes(ext)) return 'FileText';
+  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'FileSpreadsheet';
+  if (['zip', 'rar', '7z'].includes(ext)) return 'FileArchive';
+  return 'File';
+}
+
+function CredFilesBlock({ credentialId }: { credentialId: number }) {
+  const [files, setFiles] = useState<CredFile[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const load = () => {
+    setLoading(true);
+    api(`resource=files&credential_id=${credentialId}`).then(d => {
+      setLoading(false);
+      if (Array.isArray(d)) setFiles(d);
+    });
+  };
+
+  useEffect(() => { load(); }, [credentialId]);
+
+  const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const list = e.target.files;
+    if (!list || list.length === 0) return;
+    setUploading(true);
+    for (const file of Array.from(list)) {
+      const data: string = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(file);
+      });
+      await api('resource=files', 'POST', {
+        credential_id: credentialId,
+        file_name: file.name,
+        content_type: file.type || 'application/octet-stream',
+        data,
+      });
+    }
+    setUploading(false);
+    if (inputRef.current) inputRef.current.value = '';
+    load();
+  };
+
+  const doDelete = async (id: number) => {
+    setDeletingId(id);
+    await api(`resource=files&id=${id}`, 'DELETE');
+    setDeletingId(null);
+    load();
+  };
+
+  return (
+    <div className="border border-border rounded-lg p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-mono text-primary uppercase tracking-widest">Файлы</div>
+        <Button size="sm" variant="outline" disabled={uploading} className="h-7 border-dashed border-border text-muted-foreground hover:text-foreground" onClick={() => inputRef.current?.click()}>
+          <Icon name={uploading ? 'Loader' : 'Upload'} size={13} className={`mr-1 ${uploading ? 'animate-spin' : ''}`} /> {uploading ? 'Загрузка...' : 'Добавить файл'}
+        </Button>
+        <input ref={inputRef} type="file" multiple className="hidden" onChange={onPick} />
+      </div>
+      {loading ? (
+        <div className="text-xs text-muted-foreground flex items-center gap-2 py-2">
+          <Icon name="Loader" size={13} className="animate-spin" /> Загрузка...
+        </div>
+      ) : files.length === 0 ? (
+        <p className="text-xs text-muted-foreground py-1">Файлов пока нет</p>
+      ) : (
+        <div className="space-y-1.5">
+          {files.map(f => (
+            <div key={f.id} className="flex items-center gap-2 group bg-secondary/30 rounded-md px-2.5 py-1.5">
+              <Icon name={fileIconName(f.file_name)} size={14} className="text-muted-foreground shrink-0" />
+              <a href={f.file_url} target="_blank" rel="noreferrer" className="text-sm truncate hover:text-primary transition-colors flex-1 min-w-0">
+                {f.file_name}
+              </a>
+              {f.file_size != null && <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(f.file_size)}</span>}
+              <button onClick={() => doDelete(f.id)} disabled={deletingId === f.id} title="Удалить файл"
+                className="p-1 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <Icon name={deletingId === f.id ? 'Loader' : 'Trash2'} size={13} className={deletingId === f.id ? 'animate-spin' : ''} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -133,9 +241,10 @@ function CredentialsSection() {
   const [dirty, setDirty] = useState(false);
   const [filter, setFilter] = useState('');
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; folder: Folder } | null>(null);
-  const [modal, setModal] = useState<{ type: 'rename' | 'create' | 'move'; folder?: Folder } | null>(null);
+  const [modal, setModal] = useState<{ type: 'rename' | 'create' | 'move' | 'delete-folder'; folder?: Folder } | null>(null);
   const [modalVal, setModalVal] = useState('');
   const [moveTo, setMoveTo] = useState<string>('');
+  const [deletingFolder, setDeletingFolder] = useState(false);
   const ctxRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
@@ -212,6 +321,18 @@ function CredentialsSection() {
     else { setForm(EMPTY_CRED); setDirty(false); }
   };
 
+  const [confirmDeleteCred, setConfirmDeleteCred] = useState<Credential | null>(null);
+  const [deletingCred, setDeletingCred] = useState(false);
+
+  const doDeleteCred = async () => {
+    if (!confirmDeleteCred) return;
+    setDeletingCred(true);
+    await api(`resource=credentials&id=${confirmDeleteCred.id}`, 'DELETE');
+    setDeletingCred(false);
+    setConfirmDeleteCred(null);
+    if (selectedFolder !== null) loadCreds(selectedFolder);
+  };
+
   const ff = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setForm(f => ({ ...f, [field]: e.target.value })); setDirty(true);
   };
@@ -236,6 +357,16 @@ function CredentialsSection() {
     if (!modal?.folder) return;
     await api(`resource=folders&id=${modal.folder.id}`, 'PATCH', { parent_id: moveTo === '__root__' ? null : Number(moveTo) });
     setModal(null); loadFolders();
+  };
+
+  const doDeleteFolder = async () => {
+    if (!modal?.folder) return;
+    setDeletingFolder(true);
+    await api(`resource=folders&id=${modal.folder.id}`, 'DELETE');
+    setDeletingFolder(false);
+    if (selectedFolder === modal.folder.id) { setSelectedFolder(null); setSelectedCred(null); setForm(EMPTY_CRED); setDirty(false); }
+    setModal(null);
+    loadFolders();
   };
 
   const filteredFolders = filter
@@ -284,6 +415,10 @@ function CredentialsSection() {
           <button className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-secondary/60 text-left" onClick={() => { setMoveTo(''); setModal({ type: 'move', folder: ctxMenu.folder }); setCtxMenu(null); }}>
             <Icon name="FolderSymlink" size={13} /> Переместить
           </button>
+          <div className="h-px bg-border my-1" />
+          <button className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-destructive/10 text-destructive text-left" onClick={() => { setModal({ type: 'delete-folder', folder: ctxMenu.folder }); setCtxMenu(null); }}>
+            <Icon name="Trash2" size={13} /> Удалить раздел
+          </button>
         </div>
       )}
 
@@ -294,10 +429,15 @@ function CredentialsSection() {
             {/* Список записей */}
             <div className="border-b border-border p-2 flex gap-2 items-center flex-wrap">
               {creds.map(c => (
-                <button key={c.id} onClick={() => selectCred(c)}
-                  className={`px-3 py-1 rounded text-sm transition-colors ${selectedCred?.id === c.id ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 hover:bg-secondary border border-border'}`}>
-                  {c.name || '(без названия)'}
-                </button>
+                <div key={c.id} className={`group flex items-center rounded text-sm transition-colors ${selectedCred?.id === c.id ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 hover:bg-secondary border border-border'}`}>
+                  <button onClick={() => selectCred(c)} className="pl-3 pr-1.5 py-1">
+                    {c.name || '(без названия)'}
+                  </button>
+                  <button onClick={() => setConfirmDeleteCred(c)} title="Удалить запись"
+                    className={`pr-2 pl-0.5 py-1 opacity-0 group-hover:opacity-100 transition-opacity ${selectedCred?.id === c.id ? 'hover:text-destructive-foreground/70' : 'hover:text-destructive'}`}>
+                    <Icon name="X" size={12} />
+                  </button>
+                </div>
               ))}
               <Button size="sm" variant="outline" className="h-7 border-dashed border-border text-muted-foreground hover:text-foreground" onClick={newCred}>
                 <Icon name="Plus" size={13} className="mr-1" /> Новая запись
@@ -367,6 +507,9 @@ function CredentialsSection() {
                     <Textarea value={form.notes} onChange={ff('notes')} rows={8} className="bg-secondary/40 border-border text-sm resize-none" />
                   </div>
 
+                  {/* Файлы */}
+                  {selectedCred && <CredFilesBlock credentialId={selectedCred.id} />}
+
                   {/* Кнопки */}
                   <div className="flex justify-center gap-3 pt-2">
                     <Button onClick={save} className="bg-primary text-primary-foreground hover:bg-primary/90">
@@ -375,6 +518,12 @@ function CredentialsSection() {
                     <Button variant="outline" onClick={cancel} className="border-border">
                       <Icon name="X" size={15} className="mr-2" /> Отменить
                     </Button>
+                    {selectedCred && (
+                      <Button variant="outline" onClick={() => setConfirmDeleteCred(selectedCred)}
+                        className="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive">
+                        <Icon name="Trash2" size={15} className="mr-2" /> Удалить запись
+                      </Button>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -434,6 +583,46 @@ function CredentialsSection() {
           <div className="flex gap-2 justify-end mt-2">
             <Button variant="outline" onClick={() => setModal(null)}>Отмена</Button>
             <Button onClick={doMove} disabled={!moveTo}>Переместить</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modal?.type === 'delete-folder'} onOpenChange={() => setModal(null)}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icon name="TriangleAlert" size={17} className="text-destructive" />
+              Удалить «{modal?.folder?.name}»?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Раздел, все его подразделы, учётные записи и прикреплённые файлы будут удалены без возможности восстановления.
+          </p>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" onClick={() => setModal(null)}>Отмена</Button>
+            <Button disabled={deletingFolder} onClick={doDeleteFolder} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deletingFolder ? 'Удаление...' : 'Удалить'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!confirmDeleteCred} onOpenChange={() => setConfirmDeleteCred(null)}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icon name="TriangleAlert" size={17} className="text-destructive" />
+              Удалить запись?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Запись «{confirmDeleteCred?.name || '(без названия)'}» и все прикреплённые к ней файлы будут удалены без возможности восстановления.
+          </p>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" onClick={() => setConfirmDeleteCred(null)}>Отмена</Button>
+            <Button disabled={deletingCred} onClick={doDeleteCred} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deletingCred ? 'Удаление...' : 'Удалить'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

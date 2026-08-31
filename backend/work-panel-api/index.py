@@ -3,12 +3,40 @@ import os
 import hashlib
 import hmac
 import time
+import base64
+import uuid
 import psycopg2
+import boto3
 from psycopg2.extras import RealDictCursor
 
 SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 't_p34673685_special_systems_proj')
 ADMIN_LOGIN = 'Pioneer78'
 SECRET_KEY = 'specsystems_admin_secret_2026'
+S3_BUCKET = 'files'
+
+
+def get_s3():
+    return boto3.client(
+        's3',
+        endpoint_url='https://bucket.poehali.dev',
+        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+    )
+
+
+def cdn_url(key: str) -> str:
+    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
+
+
+def delete_s3_object(file_url: str):
+    prefix = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/"
+    if not file_url.startswith(prefix):
+        return
+    key = file_url[len(prefix):]
+    try:
+        get_s3().delete_object(Bucket=S3_BUCKET, Key=key)
+    except Exception:
+        pass
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -107,6 +135,27 @@ def handler(event: dict, context) -> dict:
                     cur.execute(f"UPDATE {SCHEMA}.credential_folders SET parent_id=%s, updated_at=NOW() WHERE id=%s RETURNING id", [body.get('parent_id'), rid])
                     conn.commit()
                     return ok({'ok': True})
+                if method == 'DELETE':
+                    # Собираем все вложенные подпапки (рекурсивно)
+                    folder_ids = [int(rid)]
+                    frontier = [int(rid)]
+                    while frontier:
+                        cur.execute(f"SELECT id FROM {SCHEMA}.credential_folders WHERE parent_id = ANY(%s)", [frontier])
+                        children = [r['id'] for r in cur.fetchall()]
+                        folder_ids.extend(children)
+                        frontier = children
+                    # Удаляем файлы всех credentials из этих папок
+                    cur.execute(f"SELECT id FROM {SCHEMA}.credentials WHERE folder_id = ANY(%s)", [folder_ids])
+                    cred_ids = [r['id'] for r in cur.fetchall()]
+                    if cred_ids:
+                        cur.execute(f"SELECT file_url FROM {SCHEMA}.credential_files WHERE credential_id = ANY(%s)", [cred_ids])
+                        for r in cur.fetchall():
+                            delete_s3_object(r['file_url'])
+                        cur.execute(f"DELETE FROM {SCHEMA}.credential_files WHERE credential_id = ANY(%s)", [cred_ids])
+                        cur.execute(f"DELETE FROM {SCHEMA}.credentials WHERE id = ANY(%s)", [cred_ids])
+                    cur.execute(f"DELETE FROM {SCHEMA}.credential_folders WHERE id = ANY(%s)", [folder_ids])
+                    conn.commit()
+                    return ok({'ok': True})
 
         # ── CREDENTIALS ─────────────────────────────────────────────────────────
         if resource == 'credentials':
@@ -181,6 +230,57 @@ def handler(event: dict, context) -> dict:
                     conn.commit()
                     row = cur.fetchone()
                     return ok(dict(row)) if row else err('Not found', 404)
+                if method == 'DELETE':
+                    cur.execute(f"SELECT file_url FROM {SCHEMA}.credential_files WHERE credential_id=%s", [rid])
+                    for r in cur.fetchall():
+                        delete_s3_object(r['file_url'])
+                    cur.execute(f"DELETE FROM {SCHEMA}.credential_files WHERE credential_id=%s", [rid])
+                    cur.execute(f"DELETE FROM {SCHEMA}.credentials WHERE id=%s RETURNING id", [rid])
+                    conn.commit()
+                    row = cur.fetchone()
+                    return ok({'ok': True}) if row else err('Not found', 404)
+
+        # ── CREDENTIAL FILES ────────────────────────────────────────────────────
+        if resource == 'files':
+            if method == 'GET':
+                credential_id = qs.get('credential_id', '')
+                if not credential_id:
+                    return err('credential_id required')
+                cur.execute(f"""
+                    SELECT id, credential_id, file_name, file_url, file_size, content_type, created_at
+                    FROM {SCHEMA}.credential_files WHERE credential_id=%s ORDER BY created_at DESC
+                """, [credential_id])
+                return ok([dict(r) for r in cur.fetchall()])
+            if method == 'POST':
+                credential_id = body.get('credential_id')
+                file_name = body.get('file_name', 'file')
+                content_type = body.get('content_type', 'application/octet-stream')
+                data_b64 = body.get('data', '')
+                if not credential_id or not data_b64:
+                    return err('credential_id and data required')
+                raw = base64.b64decode(data_b64.split(',')[-1])
+                ext = ''
+                if '.' in file_name:
+                    ext = '.' + file_name.rsplit('.', 1)[-1]
+                key = f"credentials/{credential_id}/{uuid.uuid4().hex}{ext}"
+                get_s3().put_object(Bucket=S3_BUCKET, Key=key, Body=raw, ContentType=content_type)
+                url = cdn_url(key)
+                cur.execute(f"""
+                    INSERT INTO {SCHEMA}.credential_files (credential_id, file_name, file_url, file_size, content_type)
+                    VALUES (%s,%s,%s,%s,%s)
+                    RETURNING id, credential_id, file_name, file_url, file_size, content_type, created_at
+                """, (credential_id, file_name, url, len(raw), content_type))
+                conn.commit()
+                return ok(dict(cur.fetchone()))
+            if method == 'DELETE' and rid:
+                cur.execute(f"SELECT file_url FROM {SCHEMA}.credential_files WHERE id=%s", [rid])
+                row = cur.fetchone()
+                if not row:
+                    return err('Not found', 404)
+                delete_s3_object(row['file_url'])
+                cur.execute(f"DELETE FROM {SCHEMA}.credential_files WHERE id=%s", [rid])
+                conn.commit()
+                return ok({'ok': True})
 
         # ── UPDATES (список клиентов с базами для раздела Обновления) ───────────
         if resource == 'updates':
