@@ -345,16 +345,17 @@ function CredentialsSection() {
                   <div className="border border-border rounded-lg p-4 space-y-3">
                     <div className="text-xs font-mono text-primary uppercase tracking-widest mb-2">Учётные записи</div>
                     {([
-                      { n: 1, lk: 'login1' as const, pk: 'password1' as const },
-                      { n: 2, lk: 'login2' as const, pk: 'password2' as const },
-                      { n: 3, lk: 'login3' as const, pk: 'password3' as const },
-                    ]).map(({ n, lk, pk }) => (
-                      <div key={n} className="flex items-center gap-3">
-                        <span className="text-xs text-muted-foreground w-8 shrink-0">ID{n}</span>
-                        <Input value={form[lk] || ''} onChange={ff(lk)} className={F_W} placeholder={`Логин ${n}`} />
+                      { n: 1, lk: 'login1' as const, pk: 'password1' as const, icon: '/icons/anydesk.png', app: 'AnyDesk' },
+                      { n: 2, lk: 'login2' as const, pk: 'password2' as const, icon: '/icons/rms.png', app: 'RMS' },
+                      { n: 3, lk: 'login3' as const, pk: 'password3' as const, icon: '/icons/rudesktop.png', app: 'RuDesktop' },
+                    ]).map(({ n, lk, pk, icon, app }) => (
+                      <div key={n} className="grid grid-cols-[20px_28px_minmax(0,1fr)_auto_36px_minmax(0,1fr)_auto] items-center gap-2">
+                        <img src={icon} alt={app} title={app} className="w-5 h-5 rounded shrink-0" />
+                        <span className="text-xs text-muted-foreground shrink-0">ID{n}</span>
+                        <Input value={form[lk] || ''} onChange={ff(lk)} className="h-7 min-w-0 bg-secondary/40 border-border text-sm font-mono px-2" placeholder={`Логин ${n}`} />
                         <CopyBtn value={form[lk] || ''} />
-                        <span className="text-xs text-muted-foreground w-10 shrink-0">PWD{n}</span>
-                        <Input type="text" value={form[pk] || ''} onChange={ff(pk)} className={F_W} placeholder={`Пароль ${n}`} />
+                        <span className="text-xs text-muted-foreground shrink-0">PWD{n}</span>
+                        <Input type="text" value={form[pk] || ''} onChange={ff(pk)} className="h-7 min-w-0 bg-secondary/40 border-border text-sm font-mono px-2" placeholder={`Пароль ${n}`} />
                         <CopyBtn value={form[pk] || ''} />
                       </div>
                     ))}
