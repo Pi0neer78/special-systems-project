@@ -519,159 +519,110 @@ function UpdatesSection() {
         </thead>
         <tbody>
           {(() => {
-            // Группируем строки по клиентам
-            const childrenByParent = new Map<number, UpdateRow[]>();
-            rows.forEach(r => {
-              if (r.client_parent_id) {
-                const arr = childrenByParent.get(r.client_parent_id) ?? [];
-                arr.push(r);
-                childrenByParent.set(r.client_parent_id, arr);
-              }
-            });
-
-            const result: React.ReactNode[] = [];
-
-            // Сначала идут главные клиенты (без parent_id)
-            const parentRows = rows.filter(r => !r.client_parent_id);
-            // Группируем строки родителя по client_id
-            const parentGroups = new Map<number, UpdateRow[]>();
-            parentRows.forEach(r => {
-              const arr = parentGroups.get(r.client_id) ?? [];
-              arr.push(r);
-              parentGroups.set(r.client_id, arr);
-            });
-
-            let isFirst = true;
-            parentGroups.forEach((groupRows, clientId) => {
-              const children = childrenByParent.get(clientId) ?? [];
-              const extraOwnDbs = groupRows.length - 1;
-              const hasChildren = children.length > 0 || extraOwnDbs > 0;
-              const isExpanded = expandedClients.has(clientId);
-              const hiddenCount = extraOwnDbs + children.length;
-
-              groupRows.forEach((row, rowIdx) => {
-                if (rowIdx > 0 && !isExpanded) return; // скрываем доп. базы клиента пока не раскрыто
-                const outdated = versionGt(row.actual_config_version, row.current_config_version);
-                result.push(
-                  <tr key={row.client_db_id} className={`border-b border-border/50 transition-colors ${outdated ? 'bg-yellow-500/8 hover:bg-yellow-500/12' : 'hover:bg-secondary/30'} ${!isFirst && rowIdx === 0 ? 'border-t-2 border-t-border' : ''}`}>
-                    <td className="px-3 py-2.5">
-                      {rowIdx === 0 ? (
-                        <span className="flex items-center gap-1">
-                          {hasChildren ? (
-                            <button onClick={() => toggleClient(clientId)} className="flex items-center justify-center w-5 h-5 rounded hover:bg-secondary/60 shrink-0 transition-colors">
-                              <Icon name={isExpanded ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground" />
-                            </button>
-                          ) : (
-                            <span className="w-5 shrink-0" />
-                          )}
-                          <span className="font-medium">{row.client_name}</span>
-                          {!isExpanded && hiddenCount > 0 && (
-                            <span className="text-[10px] text-muted-foreground bg-secondary/60 rounded px-1.5 py-0.5 ml-1">+{hiddenCount}</span>
-                          )}
-                        </span>
-                      ) : (
-                        <span className="flex items-center gap-1.5 pl-6">
-                          <Icon name="Database" size={11} className="text-border shrink-0" />
-                          <span className="text-muted-foreground text-sm">{row.client_name}</span>
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2.5 text-muted-foreground">{row.config_name}</td>
-                    <td className={`px-3 py-2.5 font-mono text-sm ${outdated ? 'text-yellow-400 font-semibold' : ''}`}>
-                      {row.current_config_version || <span className="text-muted-foreground">—</span>}
-                      {outdated && <Icon name="AlertTriangle" size={13} className="inline ml-1.5 text-yellow-400" />}
-                    </td>
-                    <td className="px-3 py-2.5 font-mono text-sm text-green-400">{row.actual_config_version || '—'}</td>
-                    <td className="px-3 py-2.5 text-muted-foreground text-xs">{row.update_date || '—'}</td>
-                    <td className="px-3 py-2.5 text-muted-foreground text-xs">{row.updated_by_name || row.updated_by_login || '—'}</td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex gap-1.5 justify-end">
-                        <Button size="sm" className="h-7 text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => openUpdate(row)}>
-                          <Icon name="RefreshCw" size={12} className="mr-1" /> Обновить
-                        </Button>
-                        <Button size="sm" variant="outline" className="h-7 text-xs border-border" onClick={() => openHistory(row)}>
-                          <Icon name="History" size={12} className="mr-1" /> История
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              });
-
-              // Дочерние клиенты — показываем только если раскрыт
-              if (isExpanded && children.length > 0) {
-                // Группируем базы данных внутри каждого подчинённого клиента
-                const childGroups = new Map<number, UpdateRow[]>();
-                children.forEach(row => {
-                  const arr = childGroups.get(row.client_id) ?? [];
-                  arr.push(row);
-                  childGroups.set(row.client_id, arr);
-                });
-
-                childGroups.forEach((childRows, childClientId) => {
-                  const extraChildDbs = childRows.length - 1;
-                  const hasExtraChildDbs = extraChildDbs > 0;
-                  const isChildExpanded = expandedClients.has(childClientId);
-
-                  childRows.forEach((row, cIdx) => {
-                    if (cIdx > 0 && !isChildExpanded) return;
-                    const outdated = versionGt(row.actual_config_version, row.current_config_version);
-                    result.push(
-                      <tr key={row.client_db_id} className={`border-b border-border/40 transition-colors ${outdated ? 'bg-yellow-500/5 hover:bg-yellow-500/10' : 'hover:bg-secondary/20'}`}>
-                        <td className="pl-8 pr-3 py-2">
-                          {cIdx === 0 ? (
-                            <span className="flex items-center gap-1.5">
-                              <Icon name="CornerDownRight" size={12} className="text-border shrink-0" />
-                              {hasExtraChildDbs ? (
-                                <button onClick={() => toggleClient(childClientId)} className="flex items-center justify-center w-4 h-4 rounded hover:bg-secondary/60 shrink-0 transition-colors">
-                                  <Icon name={isChildExpanded ? 'ChevronDown' : 'ChevronRight'} size={12} className="text-muted-foreground" />
-                                </button>
-                              ) : (
-                                <span className="w-4 shrink-0" />
-                              )}
-                              <span className="text-muted-foreground text-sm">{row.client_name}</span>
-                              {!isChildExpanded && hasExtraChildDbs && (
-                                <span className="text-[10px] text-muted-foreground bg-secondary/60 rounded px-1.5 py-0.5 ml-1">+{extraChildDbs}</span>
-                              )}
-                            </span>
-                          ) : (
-                            <span className="flex items-center gap-1.5 pl-9">
-                              <Icon name="Database" size={11} className="text-border shrink-0" />
-                              <span className="text-muted-foreground text-sm">{row.client_name}</span>
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-3 py-2 text-muted-foreground text-sm">{row.config_name}</td>
-                        <td className={`px-3 py-2 font-mono text-sm ${outdated ? 'text-yellow-400 font-semibold' : ''}`}>
-                          {row.current_config_version || <span className="text-muted-foreground">—</span>}
-                          {outdated && <Icon name="AlertTriangle" size={13} className="inline ml-1.5 text-yellow-400" />}
-                        </td>
-                        <td className="px-3 py-2 font-mono text-sm text-green-400">{row.actual_config_version || '—'}</td>
-                        <td className="px-3 py-2 text-muted-foreground text-xs">{row.update_date || '—'}</td>
-                        <td className="px-3 py-2 text-muted-foreground text-xs">{row.updated_by_name || row.updated_by_login || '—'}</td>
-                        <td className="px-3 py-2">
-                          <div className="flex gap-1.5 justify-end">
-                            <Button size="sm" className="h-7 text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => openUpdate(row)}>
-                              <Icon name="RefreshCw" size={12} className="mr-1" /> Обновить
-                            </Button>
-                            <Button size="sm" variant="outline" className="h-7 text-xs border-border" onClick={() => openHistory(row)}>
-                              <Icon name="History" size={12} className="mr-1" /> История
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  });
-                });
-              }
-
-              isFirst = false;
-            });
-
-            if (result.length === 0) {
+            if (rows.length === 0) {
               return <tr><td colSpan={7} className="px-3 py-10 text-center text-muted-foreground text-sm">Нет данных</td></tr>;
             }
-            return result;
+
+            // Базы данных клиента (все строки с данным client_id)
+            const dbsByClient = new Map<number, UpdateRow[]>();
+            // Имя клиента по id
+            const clientNameById = new Map<number, string>();
+            // Список подчинённых client_id (уникальные, по порядку) для каждого родителя
+            const childIdsByParent = new Map<number, number[]>();
+            const addedChild = new Set<number>();
+            // Список главных client_id (без родителя), уникальные, по порядку
+            const topClientIds: number[] = [];
+            const addedTop = new Set<number>();
+
+            rows.forEach(r => {
+              dbsByClient.set(r.client_id, [...(dbsByClient.get(r.client_id) ?? []), r]);
+              clientNameById.set(r.client_id, r.client_name);
+              if (r.client_parent_id) {
+                if (!addedChild.has(r.client_id)) {
+                  addedChild.add(r.client_id);
+                  const arr = childIdsByParent.get(r.client_parent_id) ?? [];
+                  arr.push(r.client_id);
+                  childIdsByParent.set(r.client_parent_id, arr);
+                }
+              } else if (!addedTop.has(r.client_id)) {
+                addedTop.add(r.client_id);
+                topClientIds.push(r.client_id);
+              }
+            });
+
+            const dbRow = (row: UpdateRow, depth: number) => {
+              const outdated = versionGt(row.actual_config_version, row.current_config_version);
+              return (
+                <tr key={row.client_db_id} className={`border-b border-border/40 transition-colors ${outdated ? 'bg-yellow-500/5 hover:bg-yellow-500/10' : 'hover:bg-secondary/20'}`}>
+                  <td className="py-2" style={{ paddingLeft: `${12 + depth * 20}px` }}>
+                    <span className="flex items-center gap-1.5">
+                      <Icon name="Database" size={11} className="text-border shrink-0" />
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground text-sm">{row.config_name}</td>
+                  <td className={`px-3 py-2 font-mono text-sm ${outdated ? 'text-yellow-400 font-semibold' : ''}`}>
+                    {row.current_config_version || <span className="text-muted-foreground">—</span>}
+                    {outdated && <Icon name="AlertTriangle" size={13} className="inline ml-1.5 text-yellow-400" />}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-sm text-green-400">{row.actual_config_version || '—'}</td>
+                  <td className="px-3 py-2 text-muted-foreground text-xs">{row.update_date || '—'}</td>
+                  <td className="px-3 py-2 text-muted-foreground text-xs">{row.updated_by_name || row.updated_by_login || '—'}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex gap-1.5 justify-end">
+                      <Button size="sm" className="h-7 text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => openUpdate(row)}>
+                        <Icon name="RefreshCw" size={12} className="mr-1" /> Обновить
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs border-border" onClick={() => openHistory(row)}>
+                        <Icon name="History" size={12} className="mr-1" /> История
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            };
+
+            const renderClient = (clientId: number, depth: number): React.ReactNode[] => {
+              const dbs = dbsByClient.get(clientId) ?? [];
+              const childIds = childIdsByParent.get(clientId) ?? [];
+              const hasContent = dbs.length > 0 || childIds.length > 0;
+              const isExpanded = expandedClients.has(clientId);
+              const name = clientNameById.get(clientId) ?? '';
+              const totalCount = dbs.length + childIds.length;
+              const out: React.ReactNode[] = [];
+
+              out.push(
+                <tr key={`client-${clientId}`} className={`border-b transition-colors hover:bg-secondary/30 ${depth === 0 ? 'border-t-2 border-t-border border-b-border/50' : 'border-b-border/40'}`}>
+                  <td className="py-2.5" style={{ paddingLeft: `${12 + depth * 20}px` }} colSpan={2}>
+                    <span className="flex items-center gap-1">
+                      {hasContent ? (
+                        <button onClick={() => toggleClient(clientId)} className="flex items-center justify-center w-5 h-5 rounded hover:bg-secondary/60 shrink-0 transition-colors">
+                          <Icon name={isExpanded ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground" />
+                        </button>
+                      ) : (
+                        <span className="w-5 shrink-0" />
+                      )}
+                      {depth === 0
+                        ? <Icon name="Building2" size={13} className="text-muted-foreground shrink-0" />
+                        : <Icon name="CornerDownRight" size={12} className="text-border shrink-0" />}
+                      <span className={depth === 0 ? 'font-medium' : 'text-muted-foreground text-sm'}>{name}</span>
+                      {!isExpanded && totalCount > 0 && (
+                        <span className="text-[10px] text-muted-foreground bg-secondary/60 rounded px-1.5 py-0.5 ml-1">{totalCount}</span>
+                      )}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5" colSpan={5}></td>
+                </tr>
+              );
+
+              if (isExpanded) {
+                dbs.forEach(row => out.push(dbRow(row, depth + 1)));
+                childIds.forEach(childId => out.push(...renderClient(childId, depth + 1)));
+              }
+
+              return out;
+            };
+
+            return topClientIds.flatMap(id => renderClient(id, 0));
           })()}
         </tbody>
       </table>
