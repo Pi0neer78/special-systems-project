@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -2116,6 +2117,66 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// NEW TICKET NOTIFIER (звук + системное уведомление о новых заявках)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const TICKET_POLL_MS = 20 * 1000;
+
+function NewTicketNotifier({ token }: { token: string }) {
+  const seenRef = useRef<Set<number> | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    audioRef.current = new Audio('/notification.mp3');
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const check = async () => {
+      const data = await fetch(`${TICKETS_URL}?resource=tickets`, { headers: { 'X-Admin-Token': token } })
+        .then(r => r.json()).catch(() => null);
+      if (cancelled || !Array.isArray(data)) return;
+
+      const ids = new Set<number>(data.map((t: Ticket) => t.id));
+
+      if (seenRef.current === null) {
+        seenRef.current = ids;
+        return;
+      }
+
+      const fresh = data.filter((t: Ticket) => !seenRef.current!.has(t.id));
+      seenRef.current = ids;
+      if (fresh.length === 0) return;
+
+      audioRef.current?.play().catch(() => {});
+
+      fresh.forEach((t: Ticket) => {
+        const title = fresh.length === 1 ? 'Новая заявка' : `Новых заявок: ${fresh.length}`;
+        const body = `${t.client_name} — ${t.problem_type}`;
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          const n = new Notification(title, { body, icon: '/favicon.svg', tag: `ticket-${t.id}` });
+          n.onclick = () => { window.focus(); n.close(); };
+        }
+      });
+
+      toast(fresh.length === 1 ? 'Новая заявка от клиента' : `Новых заявок: ${fresh.length}`, {
+        description: fresh.length === 1 ? `${fresh[0].client_name} — ${fresh[0].problem_type}` : undefined,
+      });
+    };
+
+    check();
+    const interval = setInterval(check, TICKET_POLL_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [token]);
+
+  return null;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -2206,6 +2267,7 @@ export default function WorkPanel() {
       </main>
 
       <TaskReminder token={localStorage.getItem(TOKEN_KEY) || ''} userId={authInfo.user_id} />
+      <NewTicketNotifier token={localStorage.getItem(TOKEN_KEY) || ''} />
     </div>
   );
 }
