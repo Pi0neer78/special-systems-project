@@ -90,7 +90,7 @@ function FolderNode({
   folder: Folder; folders: Folder[]; selectedId: number | null;
   onSelect: (id: number) => void; onMenu: (e: React.MouseEvent, folder: Folder) => void; depth: number;
 }) {
-  const [open, setOpen] = useState(depth < 2);
+  const [open, setOpen] = useState(false);
   const children = buildTree(folders, folder.id);
   const isRoot = folder.parent_id === null;
 
