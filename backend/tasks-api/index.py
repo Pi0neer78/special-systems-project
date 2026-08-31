@@ -267,6 +267,12 @@ def handler(event: dict, context) -> dict:
                         fields.append('color=%s'); vals.append(body['color'])
                     if 'assignee_id' in body:
                         fields.append('assignee_id=%s'); vals.append(body['assignee_id'])
+                    if 'due_date' in body:
+                        fields.append('due_date=%s'); vals.append(body['due_date'])
+                    if 'due_time' in body:
+                        fields.append('due_time=%s'); vals.append(body['due_time'])
+                    if 'all_day' in body:
+                        fields.append('all_day=%s'); vals.append(body['all_day'])
                     if not fields:
                         return err('No fields to update')
                     fields.append('updated_at=NOW()')

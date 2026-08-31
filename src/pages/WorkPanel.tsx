@@ -1588,6 +1588,157 @@ function WorkLogin({ onLogin }: { onLogin: (info: AuthInfo) => void }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// TASK REMINDER (напоминание за 15 минут до срока)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const REMINDER_LEAD_MS = 15 * 60 * 1000;
+const REMINDER_POLL_MS = 30 * 1000;
+const SNOOZE_OPTIONS = [
+  { value: 5, label: '5 мин' },
+  { value: 10, label: '10 мин' },
+  { value: 15, label: '15 мин' },
+  { value: 30, label: '30 мин' },
+  { value: 60, label: '1 час' },
+];
+
+function dueTimestamp(t: Task) {
+  if (!t.due_date) return null;
+  const iso = `${t.due_date}T${t.due_time || '00:00:00'}`;
+  const ts = new Date(iso).getTime();
+  return Number.isNaN(ts) ? null : ts;
+}
+
+function TaskReminder({ token, userId }: { token: string; userId: number }) {
+  const [queue, setQueue] = useState<Task[]>([]);
+  const [snoozing, setSnoozing] = useState(false);
+  const remindedRef = useRef<Map<number, string>>(new Map());
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    audioRef.current = new Audio('/notification.mp3');
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const check = async () => {
+      const params = new URLSearchParams({ resource: 'tasks', status: 'new,in_progress' });
+      const data = await fetch(`${TASKS_URL}?${params}`, { headers: { 'X-Admin-Token': token } }).then(r => r.json()).catch(() => null);
+      if (cancelled || !Array.isArray(data)) return;
+
+      const now = Date.now();
+      const due: Task[] = data.filter((t: Task) => {
+        const relevant = t.assignee_id === userId || t.watchers.some(w => w.id === userId);
+        if (!relevant) return false;
+        const ts = dueTimestamp(t);
+        if (ts === null) return false;
+        const key = `${t.due_date}_${t.due_time || ''}`;
+        if (remindedRef.current.get(t.id) === key) return false;
+        return ts - now <= REMINDER_LEAD_MS;
+      });
+
+      if (due.length === 0) return;
+      due.forEach(t => remindedRef.current.set(t.id, `${t.due_date}_${t.due_time || ''}`));
+      setQueue(q => {
+        const ids = new Set(q.map(x => x.id));
+        const fresh = due.filter(t => !ids.has(t.id));
+        if (fresh.length > 0) {
+          audioRef.current?.play().catch(() => {});
+        }
+        return [...q, ...fresh];
+      });
+    };
+
+    check();
+    const interval = setInterval(check, REMINDER_POLL_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [token, userId]);
+
+  const current = queue[0];
+  const dismiss = () => setQueue(q => q.slice(1));
+
+  const complete = async () => {
+    if (!current) return;
+    setSnoozing(true);
+    await fetch(`${TASKS_URL}?resource=tasks&id=${current.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({ status: 'done' }),
+    });
+    setSnoozing(false);
+    dismiss();
+  };
+
+  const snooze = async (minutes: number) => {
+    if (!current) return;
+    setSnoozing(true);
+    const newDue = new Date(Date.now() + minutes * 60000);
+    const due_date = newDue.toISOString().slice(0, 10);
+    const due_time = newDue.toTimeString().slice(0, 8);
+    await fetch(`${TASKS_URL}?resource=tasks&id=${current.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({ due_date, due_time, all_day: false }),
+    });
+    remindedRef.current.delete(current.id);
+    setSnoozing(false);
+    dismiss();
+  };
+
+  if (!current) return null;
+
+  const ts = dueTimestamp(current);
+  const overdue = ts !== null && ts < Date.now();
+
+  return (
+    <Dialog open onOpenChange={dismiss}>
+      <DialogContent
+        className="max-w-sm border-primary/40"
+        onInteractOutside={e => e.preventDefault()}
+        onEscapeKeyDown={e => e.preventDefault()}
+      >
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Icon name="BellRing" size={17} className="text-primary animate-pulse" />
+            Напоминание о задаче
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="flex items-start gap-2">
+            <span className={`inline-block w-2.5 h-2.5 rounded-full mt-1.5 shrink-0 ${colorDot(current.color)}`} />
+            <div className="min-w-0">
+              <p className="font-medium text-sm break-words">{current.title}</p>
+              {current.description && (
+                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-3">{current.description}</p>
+              )}
+            </div>
+          </div>
+          <div className={`flex items-center gap-1.5 text-xs ${overdue ? 'text-red-400 font-semibold' : 'text-muted-foreground'}`}>
+            <Icon name="Clock" size={12} />
+            {ts !== null && new Date(ts).toLocaleString('ru')}
+            {overdue && <span>— просрочена</span>}
+          </div>
+          <Button disabled={snoozing} onClick={complete} className="w-full bg-green-600 hover:bg-green-700 text-white">
+            <Icon name="Check" size={14} className="mr-1.5" /> Выполнить
+          </Button>
+          <div>
+            <p className="text-xs text-muted-foreground mb-1.5">Отложить на:</p>
+            <div className="grid grid-cols-5 gap-1.5">
+              {SNOOZE_OPTIONS.map(o => (
+                <button key={o.value} disabled={snoozing} onClick={() => snooze(o.value)}
+                  className="h-8 rounded-md border border-border bg-secondary/40 text-xs hover:bg-secondary transition-colors disabled:opacity-50">
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -1675,6 +1826,8 @@ export default function WorkPanel() {
           </div>
         )}
       </main>
+
+      <TaskReminder token={localStorage.getItem(TOKEN_KEY) || ''} userId={authInfo.user_id} />
     </div>
   );
 }
