@@ -1297,7 +1297,7 @@ function TasksSection({ token }: { token: string }) {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-border">
-                {['', 'Название', 'Срок', 'Повтор', 'Статус', 'Ответственный', 'Автор', ''].map(h => (
+                {['', 'Название', 'Срок', 'Повтор', 'Статус', 'Ответственный', 'Автор', 'Создана', ''].map(h => (
                   <th key={h} className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -1334,6 +1334,9 @@ function TasksSection({ token }: { token: string }) {
                     </td>
                     <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
                       {t.author_name || t.author_login || '—'}
+                    </td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                      {t.created_at ? new Date(t.created_at).toLocaleString('ru') : '—'}
                     </td>
                     <td className="px-3 py-2.5">
                       <div className="flex gap-1.5 justify-end">

@@ -86,7 +86,8 @@ TASK_SELECT = f"""
     SELECT t.id, t.title, t.description, t.status, t.color,
            t.due_date, t.due_time, t.all_day, t.repeat_rule, t.repeat_until,
            t.author_id, t.assignee_id, t.created_at, t.updated_at,
-           au_a.full_name AS author_name, au_a.login AS author_login,
+           CASE WHEN t.author_id IS NULL THEN 'Администратор' ELSE au_a.full_name END AS author_name,
+           CASE WHEN t.author_id IS NULL THEN '{ADMIN_LOGIN}' ELSE au_a.login END AS author_login,
            au_s.full_name AS assignee_name, au_s.login AS assignee_login
     FROM {SCHEMA}.tasks t
     LEFT JOIN {SCHEMA}.admin_users au_a ON au_a.id = t.author_id
