@@ -1066,13 +1066,13 @@ const TASK_STATUSES_LIST = [
   { value: 'cancelled',   label: 'Отменена' },
 ];
 
-const TASK_COLORS: { value: string; label: string; dot: string }[] = [
-  { value: 'blue',   label: 'Синий',    dot: 'bg-blue-500' },
-  { value: 'green',  label: 'Зелёный',  dot: 'bg-green-500' },
-  { value: 'yellow', label: 'Жёлтый',   dot: 'bg-yellow-500' },
-  { value: 'red',    label: 'Красный',  dot: 'bg-red-500' },
-  { value: 'purple', label: 'Фиолетовый', dot: 'bg-purple-500' },
-  { value: 'gray',   label: 'Серый',    dot: 'bg-gray-400' },
+const TASK_COLORS: { value: string; label: string; dot: string; sticky: string }[] = [
+  { value: 'blue',   label: 'Синий',    dot: 'bg-blue-500',   sticky: 'bg-blue-500/10 border-blue-500/30' },
+  { value: 'green',  label: 'Зелёный',  dot: 'bg-green-500',  sticky: 'bg-green-500/10 border-green-500/30' },
+  { value: 'yellow', label: 'Жёлтый',   dot: 'bg-yellow-500', sticky: 'bg-yellow-500/10 border-yellow-500/30' },
+  { value: 'red',    label: 'Красный',  dot: 'bg-red-500',    sticky: 'bg-red-500/10 border-red-500/30' },
+  { value: 'purple', label: 'Фиолетовый', dot: 'bg-purple-500', sticky: 'bg-purple-500/10 border-purple-500/30' },
+  { value: 'gray',   label: 'Серый',    dot: 'bg-gray-400',   sticky: 'bg-gray-400/10 border-gray-400/30' },
 ];
 
 const REPEAT_LABELS: Record<string, string> = {
@@ -1081,6 +1081,10 @@ const REPEAT_LABELS: Record<string, string> = {
 
 function colorDot(color: string) {
   return TASK_COLORS.find(c => c.value === color)?.dot || 'bg-gray-400';
+}
+
+function colorSticky(color: string) {
+  return TASK_COLORS.find(c => c.value === color)?.sticky || 'bg-gray-400/10 border-gray-400/30';
 }
 
 type TaskUser = { id: number; full_name: string | null; login: string };
@@ -1127,6 +1131,8 @@ function isTaskOverdue(t: Task) {
   return due < new Date();
 }
 
+const TASKS_VIEW_KEY = 'wp_tasks_view';
+
 function TasksSection({ token }: { token: string }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [meta, setMeta] = useState<TaskMeta | null>(null);
@@ -1136,11 +1142,19 @@ function TasksSection({ token }: { token: string }) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('due_date');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
+  const [view, setView] = useState<'table' | 'cards'>(() => (localStorage.getItem(TASKS_VIEW_KEY) as 'table' | 'cards') || 'table');
 
   const [editModal, setEditModal] = useState<Task | 'new' | null>(null);
   const [form, setForm] = useState(EMPTY_TASK_FORM);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [detailModal, setDetailModal] = useState<Task | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Task | null>(null);
+
+  const changeView = (v: 'table' | 'cards') => {
+    setView(v);
+    localStorage.setItem(TASKS_VIEW_KEY, v);
+  };
 
   const apiHeaders = { 'X-Admin-Token': token };
 
@@ -1241,6 +1255,20 @@ function TasksSection({ token }: { token: string }) {
     load();
   };
 
+  const deleteTask = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    await fetch(`${TASKS_URL}?resource=tasks&id=${confirmDelete.id}`, {
+      method: 'DELETE',
+      headers: { 'X-Admin-Token': token },
+    });
+    setDeleting(false);
+    setConfirmDelete(null);
+    setDetailModal(null);
+    setEditModal(null);
+    load();
+  };
+
   const sortOptions = [
     { value: 'due_date', label: 'По сроку' },
     { value: 'created_at', label: 'По дате создания' },
@@ -1278,6 +1306,16 @@ function TasksSection({ token }: { token: string }) {
           className="h-8 px-2 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
           <Icon name={order === 'asc' ? 'ArrowUp' : 'ArrowDown'} size={13} />
         </button>
+        <div className="flex items-center gap-0.5 bg-secondary/30 border border-border rounded-md p-0.5 h-8">
+          <button onClick={() => changeView('table')} title="Таблица"
+            className={`h-6 w-7 rounded flex items-center justify-center transition-colors ${view === 'table' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+            <Icon name="Table" size={13} />
+          </button>
+          <button onClick={() => changeView('cards')} title="Стикеры"
+            className={`h-6 w-7 rounded flex items-center justify-center transition-colors ${view === 'cards' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+            <Icon name="LayoutGrid" size={13} />
+          </button>
+        </div>
         <Button onClick={openNew} size="sm" className="h-8 ml-auto bg-primary text-primary-foreground hover:bg-primary/90">
           <Icon name="Plus" size={14} className="mr-1" /> Новая задача
         </Button>
@@ -1292,7 +1330,7 @@ function TasksSection({ token }: { token: string }) {
           <Icon name="ListTodo" size={36} className="opacity-20" />
           <p className="text-sm">Задач не найдено</p>
         </div>
-      ) : (
+      ) : view === 'table' ? (
         <div className="overflow-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
@@ -1346,6 +1384,9 @@ function TasksSection({ token }: { token: string }) {
                         <Button size="sm" className="h-7 text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => openEdit(t)}>
                           <Icon name="Pencil" size={12} />
                         </Button>
+                        <Button size="sm" className="h-7 text-xs bg-destructive/15 text-destructive border border-destructive/30 hover:bg-destructive/25" onClick={() => setConfirmDelete(t)}>
+                          <Icon name="Trash2" size={12} />
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -1353,6 +1394,44 @@ function TasksSection({ token }: { token: string }) {
               })}
             </tbody>
           </table>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {tasks.map(t => {
+            const st = TASK_STATUS_LABELS[t.status] || TASK_STATUS_LABELS.new;
+            const overdue = isTaskOverdue(t);
+            return (
+              <div key={t.id} className={`relative rounded-lg border p-3.5 flex flex-col gap-2 shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md ${colorSticky(t.color)} ${overdue ? 'ring-1 ring-red-500/40' : ''}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <button className="text-left font-medium text-sm break-words hover:text-primary transition-colors" onClick={() => setDetailModal(t)}>
+                    {t.title}
+                  </button>
+                  <div className="flex gap-0.5 shrink-0">
+                    <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" onClick={() => openEdit(t)} title="Редактировать">
+                      <Icon name="Pencil" size={12} />
+                    </button>
+                    <button className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-black/10 transition-colors" onClick={() => setConfirmDelete(t)} title="Удалить">
+                      <Icon name="Trash2" size={12} />
+                    </button>
+                  </div>
+                </div>
+                {t.description && <p className="text-xs text-muted-foreground line-clamp-3">{t.description}</p>}
+                <div className={`text-xs flex items-center gap-1 ${overdue ? 'text-red-400 font-semibold' : 'text-muted-foreground'}`}>
+                  <Icon name="Clock" size={11} />
+                  {t.due_date ? new Date(t.due_date).toLocaleDateString('ru') : 'без срока'}
+                  {t.due_date && !t.all_day && t.due_time && <span>{t.due_time.slice(0, 5)}</span>}
+                  {t.repeat_rule !== 'none' && <Icon name="Repeat" size={11} className="ml-0.5" />}
+                </div>
+                <div className="text-xs text-muted-foreground truncate">
+                  {t.assignee_name || t.assignee_login || 'не назначен'}
+                </div>
+                <select value={t.status} onChange={e => changeStatus(t, e.target.value)}
+                  className={`mt-auto h-7 bg-black/10 rounded text-xs font-medium px-1.5 focus:outline-none ${st.color}`}>
+                  {TASK_STATUSES_LIST.map(s => <option key={s.value} value={s.value} className="text-foreground bg-background">{s.label}</option>)}
+                </select>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -1457,6 +1536,12 @@ function TasksSection({ token }: { token: string }) {
             </div>
 
             <div className="flex gap-3 pt-1">
+              {editModal !== 'new' && (
+                <Button variant="outline" onClick={() => editModal && setConfirmDelete(editModal)}
+                  className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive">
+                  <Icon name="Trash2" size={14} />
+                </Button>
+              )}
               <Button variant="outline" onClick={() => setEditModal(null)} className="flex-1">Отмена</Button>
               <Button disabled={saving || !form.title} onClick={save} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90">
                 {saving ? 'Сохранение...' : 'Сохранить'}
@@ -1510,6 +1595,10 @@ function TasksSection({ token }: { token: string }) {
                   </div>
                 )}
                 <div className="flex gap-3 pt-1">
+                  <Button variant="outline" onClick={() => setConfirmDelete(t)}
+                    className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive">
+                    <Icon name="Trash2" size={14} />
+                  </Button>
                   <Button variant="outline" onClick={() => setDetailModal(null)} className="flex-1">Закрыть</Button>
                   <Button className="flex-1 bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => { setDetailModal(null); openEdit(t); }}>
                     <Icon name="Pencil" size={13} className="mr-1.5" /> Редактировать
@@ -1518,6 +1607,27 @@ function TasksSection({ token }: { token: string }) {
               </div>
             );
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Подтверждение удаления */}
+      <Dialog open={!!confirmDelete} onOpenChange={() => setConfirmDelete(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Icon name="TriangleAlert" size={17} className="text-destructive" />
+              Удалить задачу?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Задача «{confirmDelete?.title}» будет удалена без возможности восстановления.
+          </p>
+          <div className="flex gap-3 pt-1">
+            <Button variant="outline" onClick={() => setConfirmDelete(null)} className="flex-1">Отмена</Button>
+            <Button disabled={deleting} onClick={deleteTask} className="flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deleting ? 'Удаление...' : 'Удалить'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
