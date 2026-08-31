@@ -92,7 +92,6 @@ function FolderNode({
 }) {
   const [open, setOpen] = useState(false);
   const children = buildTree(folders, folder.id);
-  const isRoot = folder.parent_id === null;
 
   return (
     <div>
@@ -108,7 +107,7 @@ function FolderNode({
           ? <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={12} className="text-muted-foreground shrink-0" />
           : <span className="w-3 shrink-0" />
         }
-        <Icon name={isRoot ? 'Database' : 'Folder'} size={13} className={selectedId === folder.id ? 'text-primary' : 'text-muted-foreground'} />
+        <Icon name="Folder" size={13} className={selectedId === folder.id ? 'text-primary' : 'text-muted-foreground'} />
         <span className="text-sm truncate">{folder.name}</span>
       </div>
       {open && children.map(ch => (
@@ -255,9 +254,14 @@ function CredentialsSection() {
           </Button>
         </div>
         <div className="flex-1 overflow-y-auto py-1 relative" onClick={() => setCtxMenu(null)}>
+          <div className="flex items-center gap-1 px-2 py-1 text-muted-foreground select-none" style={{ paddingLeft: '8px' }}>
+            <Icon name="ChevronDown" size={12} className="shrink-0" />
+            <Icon name="Database" size={13} />
+            <span className="text-sm">/</span>
+          </div>
           {rootFolders.map(f => (
             <FolderNode key={f.id} folder={f} folders={filteredFolders} selectedId={selectedFolder}
-              onSelect={setSelectedFolder} onMenu={onMenu} depth={0} />
+              onSelect={setSelectedFolder} onMenu={onMenu} depth={1} />
           ))}
         </div>
       </div>
