@@ -1297,8 +1297,8 @@ function TasksSection({ token }: { token: string }) {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr className="border-b border-border">
-                {['', 'Название', 'Срок', 'Повтор', 'Статус', 'Ответственный', 'Автор', 'Создана', ''].map(h => (
-                  <th key={h} className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase whitespace-nowrap">{h}</th>
+                {['color', 'Название', 'Срок', 'Повтор', 'Статус', 'Ответственный', 'Автор', 'Создана', 'actions'].map(h => (
+                  <th key={h} className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase whitespace-nowrap">{h === 'color' || h === 'actions' ? '' : h}</th>
                 ))}
               </tr>
             </thead>
