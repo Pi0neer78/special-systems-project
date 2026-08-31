@@ -1142,7 +1142,9 @@ function TasksSection({ token }: { token: string }) {
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('due_date');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
-  const [view, setView] = useState<'table' | 'cards'>(() => (localStorage.getItem(TASKS_VIEW_KEY) as 'table' | 'cards') || 'table');
+  const [view, setView] = useState<'table' | 'cards' | 'board'>(() => (localStorage.getItem(TASKS_VIEW_KEY) as 'table' | 'cards' | 'board') || 'table');
+  const [dragTaskId, setDragTaskId] = useState<number | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
 
   const [editModal, setEditModal] = useState<Task | 'new' | null>(null);
   const [form, setForm] = useState(EMPTY_TASK_FORM);
@@ -1151,7 +1153,7 @@ function TasksSection({ token }: { token: string }) {
   const [detailModal, setDetailModal] = useState<Task | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Task | null>(null);
 
-  const changeView = (v: 'table' | 'cards') => {
+  const changeView = (v: 'table' | 'cards' | 'board') => {
     setView(v);
     localStorage.setItem(TASKS_VIEW_KEY, v);
   };
@@ -1315,6 +1317,10 @@ function TasksSection({ token }: { token: string }) {
             className={`h-6 w-7 rounded flex items-center justify-center transition-colors ${view === 'cards' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
             <Icon name="LayoutGrid" size={13} />
           </button>
+          <button onClick={() => changeView('board')} title="Доска (канбан)"
+            className={`h-6 w-7 rounded flex items-center justify-center transition-colors ${view === 'board' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+            <Icon name="Columns3" size={13} />
+          </button>
         </div>
         <Button onClick={openNew} size="sm" className="h-8 ml-auto bg-primary text-primary-foreground hover:bg-primary/90">
           <Icon name="Plus" size={14} className="mr-1" /> Новая задача
@@ -1395,7 +1401,7 @@ function TasksSection({ token }: { token: string }) {
             </tbody>
           </table>
         </div>
-      ) : (
+      ) : view === 'cards' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
           {tasks.map(t => {
             const st = TASK_STATUS_LABELS[t.status] || TASK_STATUS_LABELS.new;
@@ -1429,6 +1435,75 @@ function TasksSection({ token }: { token: string }) {
                   className={`mt-auto h-7 bg-black/10 rounded text-xs font-medium px-1.5 focus:outline-none ${st.color}`}>
                   {TASK_STATUSES_LIST.map(s => <option key={s.value} value={s.value} className="text-foreground bg-background">{s.label}</option>)}
                 </select>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {TASK_STATUSES_LIST.map(col => {
+            const colTasks = tasks.filter(t => t.status === col.value);
+            const stMeta = TASK_STATUS_LABELS[col.value];
+            const isOver = dragOverStatus === col.value;
+            return (
+              <div key={col.value}
+                onDragOver={e => { e.preventDefault(); setDragOverStatus(col.value); }}
+                onDragLeave={() => setDragOverStatus(prev => (prev === col.value ? null : prev))}
+                onDrop={e => {
+                  e.preventDefault();
+                  setDragOverStatus(null);
+                  const id = dragTaskId;
+                  setDragTaskId(null);
+                  if (id === null) return;
+                  const task = tasks.find(x => x.id === id);
+                  if (task && task.status !== col.value) changeStatus(task, col.value);
+                }}
+                className={`flex flex-col shrink-0 w-72 rounded-lg border bg-secondary/20 transition-colors ${isOver ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <div className="flex items-center gap-1.5 px-3 py-2.5 border-b border-border/60">
+                  <Icon name={stMeta.icon} size={13} className={stMeta.color} />
+                  <span className={`text-xs font-semibold uppercase tracking-wide ${stMeta.color}`}>{col.label}</span>
+                  <span className="ml-auto text-xs text-muted-foreground font-mono">{colTasks.length}</span>
+                </div>
+                <div className="flex-1 flex flex-col gap-2 p-2 min-h-[80px]">
+                  {colTasks.map(t => {
+                    const overdue = isTaskOverdue(t);
+                    const dragging = dragTaskId === t.id;
+                    return (
+                      <div key={t.id} draggable
+                        onDragStart={e => { setDragTaskId(t.id); e.dataTransfer.effectAllowed = 'move'; }}
+                        onDragEnd={() => { setDragTaskId(null); setDragOverStatus(null); }}
+                        className={`rounded-lg border p-3 flex flex-col gap-1.5 cursor-grab active:cursor-grabbing shadow-sm transition-all ${colorSticky(t.color)} ${overdue ? 'ring-1 ring-red-500/40' : ''} ${dragging ? 'opacity-40' : 'opacity-100'}`}>
+                        <div className="flex items-start justify-between gap-1.5">
+                          <button className="text-left font-medium text-sm break-words hover:text-primary transition-colors" onClick={() => setDetailModal(t)}>
+                            {t.title}
+                          </button>
+                          <div className="flex gap-0.5 shrink-0">
+                            <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" onClick={() => openEdit(t)} title="Редактировать">
+                              <Icon name="Pencil" size={11} />
+                            </button>
+                            <button className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-black/10 transition-colors" onClick={() => setConfirmDelete(t)} title="Удалить">
+                              <Icon name="Trash2" size={11} />
+                            </button>
+                          </div>
+                        </div>
+                        <div className={`text-xs flex items-center gap-1 ${overdue ? 'text-red-400 font-semibold' : 'text-muted-foreground'}`}>
+                          <Icon name="Clock" size={11} />
+                          {t.due_date ? new Date(t.due_date).toLocaleDateString('ru') : 'без срока'}
+                          {t.due_date && !t.all_day && t.due_time && <span>{t.due_time.slice(0, 5)}</span>}
+                          {t.repeat_rule !== 'none' && <Icon name="Repeat" size={11} className="ml-0.5" />}
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {t.assignee_name || t.assignee_login || 'не назначен'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {colTasks.length === 0 && (
+                    <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground/50 py-6">
+                      пусто
+                    </div>
+                  )}
+                </div>
               </div>
             );
           })}
