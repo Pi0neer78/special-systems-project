@@ -4,6 +4,7 @@ import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import ThemeToggle from '@/components/ThemeToggle';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -1062,6 +1063,7 @@ function AdminLogin({ onLogin }: { onLogin: (info: AuthInfo) => void }) {
 
   return (
     <div className="min-h-screen flex items-center justify-center grid-bg">
+      <ThemeToggle className="absolute top-4 right-4" />
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[400px] bg-primary/10 rounded-full blur-[120px]" />
       </div>
@@ -1183,7 +1185,8 @@ export default function Admin() {
                 <span className="hidden sm:inline">{t.label}</span>
               </button>
             ))}
-            <button onClick={logout} className="ml-2 text-muted-foreground hover:text-destructive transition-colors p-1.5" title="Выйти">
+            <ThemeToggle className="ml-1" />
+            <button onClick={logout} className="text-muted-foreground hover:text-destructive transition-colors p-1.5" title="Выйти">
               <Icon name="LogOut" size={16} />
             </button>
           </div>

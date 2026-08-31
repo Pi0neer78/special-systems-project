@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import ThemeToggle from '@/components/ThemeToggle';
 
 const TICKETS_URL = 'https://functions.poehali.dev/4866cc97-c798-42d4-a280-d35071d704a8';
 const CLIENT_TOKEN_KEY = 'client_token';
@@ -467,6 +468,7 @@ export default function PersonalAccount() {
               <Icon name="User" size={14} />
               <span className="hidden sm:inline">{clientInfo.name}</span>
             </div>
+            <ThemeToggle />
             <button onClick={logout} className="text-muted-foreground hover:text-destructive transition-colors p-1.5" title="Выйти">
               <Icon name="LogOut" size={16} />
             </button>

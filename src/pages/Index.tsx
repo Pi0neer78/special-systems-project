@@ -3,6 +3,7 @@ import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import ThemeToggle from '@/components/ThemeToggle';
 import { useNavigate } from 'react-router-dom';
 
 const TICKETS_URL = 'https://functions.poehali.dev/4866cc97-c798-42d4-a280-d35071d704a8';
@@ -80,10 +81,13 @@ export default function Index() {
               Спец<span className="text-primary">Системы</span>
             </span>
           </div>
-          <Button onClick={() => setLoginOpen(true)} variant="outline" size="sm" className="gap-2 border-primary/40 text-primary hover:bg-primary/10">
-            <Icon name="User" size={15} />
-            Личный кабинет
-          </Button>
+          <div className="flex items-center gap-2">
+            <ThemeToggle />
+            <Button onClick={() => setLoginOpen(true)} variant="outline" size="sm" className="gap-2 border-primary/40 text-primary hover:bg-primary/10">
+              <Icon name="User" size={15} />
+              Личный кабинет
+            </Button>
+          </div>
         </div>
       </header>
 
