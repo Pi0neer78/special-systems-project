@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import ThemeToggle from '@/components/ThemeToggle';
+import workPanelBg from '@/assets/work-panel-bg.jpg';
 import {
   Dialog,
   DialogContent,
@@ -379,7 +380,7 @@ function CredentialsSection() {
   const F_W = 'w-[24ch] h-7 bg-secondary/40 border-border text-sm font-mono px-2';
 
   return (
-    <div ref={containerRef} className="flex gap-0 h-[calc(100vh-120px)] relative select-none">
+    <div ref={containerRef} className="flex gap-0 h-[calc(100vh-176px)] relative select-none">
       {/* Левая панель — дерево */}
       <div className="border-r border-border flex flex-col shrink-0" style={{ width: `${panelW}%` }}>
         <div className="p-2 border-b border-border flex gap-1">
@@ -2199,16 +2200,22 @@ export default function WorkPanel() {
 
   if (!authInfo) return <WorkLogin onLogin={setAuthInfo} />;
 
-  const tabs: { id: Tab; label: string; icon: string }[] = [
-    { id: 'credentials', label: 'Учётные данные', icon: 'Lock' },
-    { id: 'updates', label: 'Обновления', icon: 'RefreshCw' },
-    { id: 'tickets', label: 'Заявки клиентов', icon: 'TicketCheck' },
-    { id: 'tasks', label: 'Задачи', icon: 'ListTodo' },
+  const tabs: { id: Tab; label: string; icon: string; from: string; to: string; glow: string }[] = [
+    { id: 'credentials', label: 'Учётные данные', icon: 'Lock', from: 'from-amber-400', to: 'to-orange-500', glow: 'shadow-orange-500/30' },
+    { id: 'updates', label: 'Обновления', icon: 'RefreshCw', from: 'from-blue-400', to: 'to-cyan-500', glow: 'shadow-blue-500/30' },
+    { id: 'tickets', label: 'Заявки клиентов', icon: 'TicketCheck', from: 'from-fuchsia-400', to: 'to-purple-600', glow: 'shadow-purple-500/30' },
+    { id: 'tasks', label: 'Задачи', icon: 'ListTodo', from: 'from-emerald-400', to: 'to-teal-500', glow: 'shadow-emerald-500/30' },
   ];
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
-      <header className="border-b border-border/60 bg-background/90 backdrop-blur-xl sticky top-0 z-40">
+    <div className="min-h-screen flex flex-col bg-background relative">
+      {/* Фоновая иллюстрация IT-тематики */}
+      <div
+        className="fixed inset-0 z-0 pointer-events-none bg-cover bg-center opacity-[0.05] dark:opacity-[0.08]"
+        style={{ backgroundImage: `url(${workPanelBg})` }}
+      />
+
+      <header className="border-b border-border/60 bg-background/90 backdrop-blur-xl sticky top-0 z-40 relative">
         <div className="container flex items-center justify-between h-14">
           <div className="flex items-center gap-3">
             <span className="flex items-center justify-center w-8 h-8 rounded-md bg-primary/15 border border-primary/40">
@@ -2222,15 +2229,6 @@ export default function WorkPanel() {
             </span>
           </div>
           <div className="flex items-center gap-2">
-            {tabs.map(t => (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all ${
-                  tab === t.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                }`}>
-                <Icon name={t.icon} size={14} />
-                <span className="hidden sm:inline">{t.label}</span>
-              </button>
-            ))}
             <div className="ml-2 flex items-center gap-2 text-xs text-muted-foreground">
               <Icon name="User" size={13} />
               <span className="hidden sm:inline">{authInfo.full_name || authInfo.login}</span>
@@ -2245,9 +2243,35 @@ export default function WorkPanel() {
             </button>
           </div>
         </div>
+
+        {/* Разделы — крупные цветные иконки */}
+        <div className="container flex items-stretch gap-3 pb-3 pt-1 overflow-x-auto">
+          {tabs.map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`group flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all shrink-0 ${
+                tab === t.id
+                  ? `border-transparent bg-gradient-to-br ${t.from} ${t.to} shadow-lg ${t.glow}`
+                  : 'border-border bg-secondary/40 hover:bg-secondary'
+              }`}
+            >
+              <span
+                className={`flex items-center justify-center w-9 h-9 rounded-lg shrink-0 transition-all ${
+                  tab === t.id ? 'bg-white/20' : `bg-gradient-to-br ${t.from} ${t.to}`
+                }`}
+              >
+                <Icon name={t.icon} size={20} className="text-white" />
+              </span>
+              <span className={`font-display text-sm uppercase tracking-wide whitespace-nowrap ${tab === t.id ? 'text-white' : 'text-foreground'}`}>
+                {t.label}
+              </span>
+            </button>
+          ))}
+        </div>
       </header>
 
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-hidden relative z-10">
         {tab === 'credentials' && <CredentialsSection />}
         {tab === 'updates' && (
           <div className="container py-6">
