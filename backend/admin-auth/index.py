@@ -56,8 +56,6 @@ def _get_user_ids_for_verify():
             rows = [{'user_id': r['id'], 'login': r['login']} for r in cur.fetchall()]
             cur.close()
             conn.close()
-            # Добавляем admin
-            rows.append({'user_id': 0, 'login': ADMIN_LOGIN})
             _cached_users = rows
             _cached_ts = now
         except Exception:

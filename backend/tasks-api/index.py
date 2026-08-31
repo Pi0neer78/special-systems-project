@@ -51,13 +51,6 @@ def decode_token(token: str, conn) -> dict:
     return None
 
 
-def norm_uid(v):
-    """Фиктивный супер-админ имеет id=0, которого нет в admin_users — превращаем в NULL."""
-    if v in (None, '', 0, '0'):
-        return None
-    return v
-
-
 def task_row_to_dict(r, watchers):
     d = dict(r)
     d['watchers'] = watchers
@@ -93,8 +86,7 @@ TASK_SELECT = f"""
     SELECT t.id, t.title, t.description, t.status, t.color,
            t.due_date, t.due_time, t.all_day, t.repeat_rule, t.repeat_until,
            t.author_id, t.assignee_id, t.created_at, t.updated_at,
-           CASE WHEN t.author_id IS NULL THEN 'Администратор' ELSE au_a.full_name END AS author_name,
-           CASE WHEN t.author_id IS NULL THEN '{ADMIN_LOGIN}' ELSE au_a.login END AS author_login,
+           au_a.full_name AS author_name, au_a.login AS author_login,
            au_s.full_name AS assignee_name, au_s.login AS assignee_login
     FROM {SCHEMA}.tasks t
     LEFT JOIN {SCHEMA}.admin_users au_a ON au_a.id = t.author_id
@@ -129,9 +121,8 @@ def handler(event: dict, context) -> dict:
         # ── TASK META (список пользователей для селекторов) ──────────────────
         if resource == 'task-meta':
             if method == 'GET':
-                cur.execute(f"SELECT id, login, full_name FROM {SCHEMA}.admin_users WHERE is_active=TRUE ORDER BY full_name")
+                cur.execute(f"SELECT id, login, full_name FROM {SCHEMA}.admin_users WHERE is_active=TRUE ORDER BY (id=0) DESC, full_name")
                 users = [dict(r) for r in cur.fetchall()]
-                users.insert(0, {'id': 0, 'login': ADMIN_LOGIN, 'full_name': 'Администратор'})
                 return ok({'users': users, 'statuses': STATUSES, 'colors': COLORS, 'repeat_rules': REPEAT_RULES})
 
         # ── TASKS ──────────────────────────────────────────────────────────────
@@ -186,9 +177,9 @@ def handler(event: dict, context) -> dict:
                     return ok([task_row_to_dict(r, watchers.get(r['id'], [])) for r in rows])
 
                 if method == 'POST':
-                    author_id = norm_uid(body.get('author_id'))
+                    author_id = body.get('author_id')
                     if author_id is None and 'author_id' not in body:
-                        author_id = norm_uid(caller['user_id'])
+                        author_id = caller['user_id']
                     status = body.get('status', 'new')
                     color = body.get('color', 'blue')
                     repeat_rule = body.get('repeat_rule', 'none')
@@ -206,14 +197,12 @@ def handler(event: dict, context) -> dict:
                         body.get('all_day', True),
                         repeat_rule if repeat_rule in REPEAT_RULES else 'none',
                         body.get('repeat_until'),
-                        author_id, norm_uid(body.get('assignee_id')),
+                        author_id, body.get('assignee_id'),
                     ))
                     new_id = cur.fetchone()['id']
 
-                    watcher_ids = [norm_uid(u) for u in (body.get('watcher_ids') or [])]
+                    watcher_ids = body.get('watcher_ids') or []
                     for uid in watcher_ids:
-                        if uid is None:
-                            continue
                         cur.execute(f"INSERT INTO {SCHEMA}.task_watchers (task_id, user_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (new_id, uid))
                     conn.commit()
 
@@ -250,7 +239,7 @@ def handler(event: dict, context) -> dict:
                         body.get('all_day', True),
                         repeat_rule if repeat_rule in REPEAT_RULES else 'none',
                         body.get('repeat_until'),
-                        norm_uid(body.get('assignee_id')),
+                        body.get('assignee_id'),
                         rid,
                     ))
                     row = cur.fetchone()
@@ -260,9 +249,6 @@ def handler(event: dict, context) -> dict:
                     if 'watcher_ids' in body:
                         cur.execute(f"DELETE FROM {SCHEMA}.task_watchers WHERE task_id=%s", [rid])
                         for uid in (body.get('watcher_ids') or []):
-                            uid = norm_uid(uid)
-                            if uid is None:
-                                continue
                             cur.execute(f"INSERT INTO {SCHEMA}.task_watchers (task_id, user_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (rid, uid))
                     conn.commit()
 
@@ -278,7 +264,7 @@ def handler(event: dict, context) -> dict:
                     if 'color' in body and body['color'] in COLORS:
                         fields.append('color=%s'); vals.append(body['color'])
                     if 'assignee_id' in body:
-                        fields.append('assignee_id=%s'); vals.append(norm_uid(body['assignee_id']))
+                        fields.append('assignee_id=%s'); vals.append(body['assignee_id'])
                     if 'due_date' in body:
                         fields.append('due_date=%s'); vals.append(body['due_date'])
                     if 'due_time' in body:

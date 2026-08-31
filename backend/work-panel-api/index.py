@@ -33,9 +33,8 @@ def decode_token(token: str, conn) -> dict:
     """Декодирует токен, возвращает {'role': ..., 'user_id': ..., 'login': ...} или None."""
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute(f"SELECT id, login FROM {SCHEMA}.admin_users WHERE is_active = TRUE")
-    rows = [{'user_id': r['id'], 'login': r['login'], 'role': 'user'} for r in cur.fetchall()]
+    rows = [{'user_id': r['id'], 'login': r['login'], 'role': 'admin' if r['id'] == 0 else 'user'} for r in cur.fetchall()]
     cur.close()
-    rows.append({'user_id': 0, 'login': ADMIN_LOGIN, 'role': 'admin'})
 
     for delta in [0, -1]:
         ts = str(int(time.time() // 3600) + delta)
@@ -270,9 +269,8 @@ def handler(event: dict, context) -> dict:
         # ── USERS LIST (для выбора в форме обновления) ───────────────────────────
         if resource == 'users':
             if method == 'GET':
-                cur.execute(f"SELECT id, login, full_name FROM {SCHEMA}.admin_users WHERE is_active=TRUE ORDER BY full_name")
+                cur.execute(f"SELECT id, login, full_name FROM {SCHEMA}.admin_users WHERE is_active=TRUE ORDER BY (id=0) DESC, full_name")
                 users = [dict(r) for r in cur.fetchall()]
-                users.insert(0, {'id': 0, 'login': ADMIN_LOGIN, 'full_name': 'Администратор'})
                 return ok(users)
 
         return err('Unknown resource', 404)

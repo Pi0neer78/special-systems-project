@@ -77,7 +77,6 @@ def verify_admin_token(token: str):
     users = [{'user_id': r['id'], 'login': r['login']} for r in cur.fetchall()]
     cur.close()
     conn.close()
-    users.append({'user_id': 0, 'login': ADMIN_LOGIN_HARDCODED})
     for delta in [0, -1]:
         ts = str(int(time.time() // 3600) + delta)
         for role in ['admin', 'user']:

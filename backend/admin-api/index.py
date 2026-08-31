@@ -29,9 +29,8 @@ def get_all_logins(conn):
     """Получить все активные логины пользователей + суперадмин."""
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute(f"SELECT id, login FROM {SCHEMA}.admin_users WHERE is_active = TRUE")
-    rows = [{'user_id': r['id'], 'login': r['login'], 'role': 'user'} for r in cur.fetchall()]
+    rows = [{'user_id': r['id'], 'login': r['login'], 'role': 'admin' if r['id'] == 0 else 'user'} for r in cur.fetchall()]
     cur.close()
-    rows.append({'user_id': 0, 'login': ADMIN_LOGIN, 'role': 'admin'})
     return rows
 
 
@@ -92,7 +91,7 @@ def handler(event: dict, context) -> dict:
         if resource == 'users':
             if not rid:
                 if method == 'GET':
-                    cur.execute(f"SELECT id, login, full_name, is_active, phone, description, created_at FROM {SCHEMA}.admin_users ORDER BY id")
+                    cur.execute(f"SELECT id, login, full_name, is_active, phone, description, created_at FROM {SCHEMA}.admin_users WHERE id != 0 ORDER BY id")
                     users = [dict(r) for r in cur.fetchall()]
                     # attach linked clients for each user
                     cur.execute(f"""
@@ -116,6 +115,8 @@ def handler(event: dict, context) -> dict:
                     conn.commit()
                     return ok(dict(cur.fetchone()))
             else:
+                if rid == '0':
+                    return err('Служебная запись администратора недоступна для редактирования', 403)
                 if method == 'PUT':
                     fields = []
                     vals = []
