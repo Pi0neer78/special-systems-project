@@ -167,14 +167,14 @@ def handler(event: dict, context) -> dict:
                             SELECT id, folder_id, name, login, password,
                                    login1, password1, login2, password2,
                                    login3, password3, ip, notes
-                            FROM {SCHEMA}.credentials WHERE folder_id=%s ORDER BY name
+                            FROM {SCHEMA}.credentials WHERE folder_id=%s AND is_files_container=FALSE ORDER BY name
                         """, [folder_id])
                     else:
                         cur.execute(f"""
                             SELECT id, folder_id, name, login, password,
                                    login1, password1, login2, password2,
                                    login3, password3, ip, notes
-                            FROM {SCHEMA}.credentials ORDER BY name
+                            FROM {SCHEMA}.credentials WHERE is_files_container=FALSE ORDER BY name
                         """)
                     return ok([dict(r) for r in cur.fetchall()])
                 if method == 'POST':
@@ -231,6 +231,12 @@ def handler(event: dict, context) -> dict:
                     row = cur.fetchone()
                     return ok(dict(row)) if row else err('Not found', 404)
                 if method == 'DELETE':
+                    cur.execute(f"SELECT is_files_container FROM {SCHEMA}.credentials WHERE id=%s", [rid])
+                    row0 = cur.fetchone()
+                    if not row0:
+                        return err('Not found', 404)
+                    if row0['is_files_container']:
+                        return err('Служебная запись файлов не может быть удалена', 400)
                     cur.execute(f"SELECT file_url FROM {SCHEMA}.credential_files WHERE credential_id=%s", [rid])
                     for r in cur.fetchall():
                         delete_s3_object(r['file_url'])
@@ -239,6 +245,27 @@ def handler(event: dict, context) -> dict:
                     conn.commit()
                     row = cur.fetchone()
                     return ok({'ok': True}) if row else err('Not found', 404)
+
+        # ── FILES CONTAINER (служебная неудаляемая запись «ФАЙЛЫ» на раздел) ────
+        if resource == 'files-container':
+            if method == 'GET':
+                folder_id = qs.get('folder_id', '')
+                if not folder_id:
+                    return err('folder_id required')
+                cur.execute(f"""
+                    SELECT id, folder_id, name FROM {SCHEMA}.credentials
+                    WHERE folder_id=%s AND is_files_container=TRUE
+                """, [folder_id])
+                row = cur.fetchone()
+                if row:
+                    return ok(dict(row))
+                cur.execute(f"""
+                    INSERT INTO {SCHEMA}.credentials (folder_id, name, is_files_container)
+                    VALUES (%s, '(ФАЙЛЫ)', TRUE)
+                    RETURNING id, folder_id, name
+                """, [folder_id])
+                conn.commit()
+                return ok(dict(cur.fetchone()))
 
         # ── CREDENTIAL FILES ────────────────────────────────────────────────────
         if resource == 'files':

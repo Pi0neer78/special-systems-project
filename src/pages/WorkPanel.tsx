@@ -239,6 +239,8 @@ function CredentialsSection() {
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
   const [creds, setCreds] = useState<Credential[]>([]);
   const [selectedCred, setSelectedCred] = useState<Credential | null>(null);
+  const [filesContainer, setFilesContainer] = useState<{ id: number; folder_id: number; name: string } | null>(null);
+  const [viewingFiles, setViewingFiles] = useState(false);
   const [form, setForm] = useState<Omit<Credential, 'id'>>(EMPTY_CRED);
   const [dirty, setDirty] = useState(false);
   const [filter, setFilter] = useState('');
@@ -277,6 +279,7 @@ function CredentialsSection() {
   const loadFolders = () => api('resource=folders').then(d => { if (Array.isArray(d)) setFolders(d); });
 
   const selectCredData = (c: Credential) => {
+    setViewingFiles(false);
     setSelectedCred(c);
     setForm({ folder_id: c.folder_id, name: c.name, login: c.login || '', password: c.password || '', login1: c.login1 || '', password1: c.password1 || '', login2: c.login2 || '', password2: c.password2 || '', login3: c.login3 || '', password3: c.password3 || '', ip: c.ip || '', notes: c.notes || '' });
     setDirty(false);
@@ -287,13 +290,17 @@ function CredentialsSection() {
     if (Array.isArray(d)) {
       setCreds(d);
       if (d.length > 0) selectCredData(d[0]);
-      else { setSelectedCred(null); setForm(EMPTY_CRED); setDirty(false); }
+      else { setViewingFiles(false); setSelectedCred(null); setForm(EMPTY_CRED); setDirty(false); }
     }
+  });
+
+  const loadFilesContainer = (fid: number) => api(`resource=files-container&folder_id=${fid}`).then(d => {
+    if (d && d.id) setFilesContainer(d);
   });
 
   useEffect(() => { loadFolders(); }, []);
   useEffect(() => {
-    if (selectedFolder !== null) { loadCreds(selectedFolder); }
+    if (selectedFolder !== null) { loadCreds(selectedFolder); loadFilesContainer(selectedFolder); }
   }, [selectedFolder]);
 
   useEffect(() => {
@@ -303,6 +310,7 @@ function CredentialsSection() {
   }, []);
 
   const newCred = () => {
+    setViewingFiles(false);
     setSelectedCred(null);
     setForm({ ...EMPTY_CRED, folder_id: selectedFolder });
     setDirty(true);
@@ -380,7 +388,7 @@ function CredentialsSection() {
   const F_W = 'w-[24ch] h-7 bg-secondary/40 border-border text-sm font-mono px-2';
 
   return (
-    <div ref={containerRef} className="flex gap-0 h-[calc(100vh-176px)] relative select-none">
+    <div ref={containerRef} className="flex gap-0 h-[calc(100vh-120px)] relative select-none">
       {/* Левая панель — дерево */}
       <div className="border-r border-border flex flex-col shrink-0" style={{ width: `${panelW}%` }}>
         <div className="p-2 border-b border-border flex gap-1">
@@ -444,11 +452,26 @@ function CredentialsSection() {
               <Button size="sm" variant="outline" className="h-7 border-dashed border-border text-muted-foreground hover:text-foreground" onClick={newCred}>
                 <Icon name="Plus" size={13} className="mr-1" /> Новая запись
               </Button>
+              {filesContainer && (
+                <button
+                  onClick={() => { setViewingFiles(true); setSelectedCred(null); setDirty(false); }}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-sm font-medium transition-colors ml-auto ${
+                    viewingFiles ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 hover:bg-secondary border border-border text-foreground'
+                  }`}
+                >
+                  <Icon name="Paperclip" size={13} />
+                  (ФАЙЛЫ)
+                </button>
+              )}
             </div>
 
             {/* Форма */}
             <div className="flex-1 overflow-y-auto p-5">
-              {(selectedCred || dirty) ? (
+              {viewingFiles && filesContainer ? (
+                <div className="max-w-xl">
+                  <CredFilesBlock credentialId={filesContainer.id} />
+                </div>
+              ) : (selectedCred || dirty) ? (
                 <div className="space-y-4 max-w-xl">
                   {/* Название */}
                   <div>
@@ -508,9 +531,6 @@ function CredentialsSection() {
                     <label className="text-xs text-muted-foreground mb-1 block">Заметки</label>
                     <Textarea value={form.notes} onChange={ff('notes')} rows={8} className="bg-secondary/40 border-border text-sm resize-none" />
                   </div>
-
-                  {/* Файлы */}
-                  {selectedCred && <CredFilesBlock credentialId={selectedCred.id} />}
 
                   {/* Кнопки */}
                   <div className="flex justify-center gap-3 pt-2">
@@ -2200,11 +2220,11 @@ export default function WorkPanel() {
 
   if (!authInfo) return <WorkLogin onLogin={setAuthInfo} />;
 
-  const tabs: { id: Tab; label: string; icon: string; from: string; to: string; glow: string }[] = [
-    { id: 'credentials', label: 'Учётные данные', icon: 'Lock', from: 'from-amber-400', to: 'to-orange-500', glow: 'shadow-orange-500/30' },
-    { id: 'updates', label: 'Обновления', icon: 'RefreshCw', from: 'from-blue-400', to: 'to-cyan-500', glow: 'shadow-blue-500/30' },
-    { id: 'tickets', label: 'Заявки клиентов', icon: 'TicketCheck', from: 'from-fuchsia-400', to: 'to-purple-600', glow: 'shadow-purple-500/30' },
-    { id: 'tasks', label: 'Задачи', icon: 'ListTodo', from: 'from-emerald-400', to: 'to-teal-500', glow: 'shadow-emerald-500/30' },
+  const tabs: { id: Tab; label: string; icon: string }[] = [
+    { id: 'credentials', label: 'Учётные данные', icon: 'Lock' },
+    { id: 'updates', label: 'Обновления', icon: 'RefreshCw' },
+    { id: 'tickets', label: 'Заявки клиентов', icon: 'TicketCheck' },
+    { id: 'tasks', label: 'Задачи', icon: 'ListTodo' },
   ];
 
   return (
@@ -2229,6 +2249,15 @@ export default function WorkPanel() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {tabs.map(t => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all ${
+                  tab === t.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                }`}>
+                <Icon name={t.icon} size={14} />
+                <span className="hidden sm:inline">{t.label}</span>
+              </button>
+            ))}
             <div className="ml-2 flex items-center gap-2 text-xs text-muted-foreground">
               <Icon name="User" size={13} />
               <span className="hidden sm:inline">{authInfo.full_name || authInfo.login}</span>
@@ -2242,32 +2271,6 @@ export default function WorkPanel() {
               <Icon name="LogOut" size={16} />
             </button>
           </div>
-        </div>
-
-        {/* Разделы — крупные цветные иконки */}
-        <div className="container flex items-stretch gap-3 pb-3 pt-1 overflow-x-auto">
-          {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`group flex items-center gap-3 px-4 py-2.5 rounded-xl border transition-all shrink-0 ${
-                tab === t.id
-                  ? `border-transparent bg-gradient-to-br ${t.from} ${t.to} shadow-lg ${t.glow}`
-                  : 'border-border bg-secondary/40 hover:bg-secondary'
-              }`}
-            >
-              <span
-                className={`flex items-center justify-center w-9 h-9 rounded-lg shrink-0 transition-all ${
-                  tab === t.id ? 'bg-white/20' : `bg-gradient-to-br ${t.from} ${t.to}`
-                }`}
-              >
-                <Icon name={t.icon} size={20} className="text-white" />
-              </span>
-              <span className={`font-display text-sm uppercase tracking-wide whitespace-nowrap ${tab === t.id ? 'text-white' : 'text-foreground'}`}>
-                {t.label}
-              </span>
-            </button>
-          ))}
         </div>
       </header>
 
