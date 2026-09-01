@@ -196,12 +196,25 @@ function buildTree(folders: Folder[], parentId: number | null = null): Folder[] 
   return folders.filter(f => f.parent_id === parentId).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
 }
 
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark className="bg-primary/30 text-inherit rounded-sm px-0.5">{text.slice(idx, idx + query.length)}</mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
+
 function FolderNode({
-  folder, folders, selectedId, onSelect, onMenu, depth, forceExpand,
+  folder, folders, selectedId, onSelect, onMenu, depth, forceExpand, highlight,
 }: {
   folder: Folder; folders: Folder[]; selectedId: number | null;
   onSelect: (id: number) => void; onMenu: (e: React.MouseEvent, folder: Folder) => void; depth: number;
-  forceExpand?: boolean;
+  forceExpand?: boolean; highlight?: string;
 }) {
   const isRoot = folder.parent_id === null;
   const [open, setOpen] = useState(isRoot);
@@ -223,11 +236,11 @@ function FolderNode({
           : <span className="w-3 shrink-0" />
         }
         <Icon name={isRoot ? 'Database' : 'Folder'} size={13} className={selectedId === folder.id ? 'text-primary' : 'text-muted-foreground'} />
-        <span className="text-sm truncate">{folder.name}</span>
+        <span className="text-sm truncate"><HighlightText text={folder.name} query={highlight || ''} /></span>
       </div>
       {effectiveOpen && children.map(ch => (
         <FolderNode key={ch.id} folder={ch} folders={folders} selectedId={selectedId}
-          onSelect={onSelect} onMenu={onMenu} depth={depth + 1} forceExpand={forceExpand} />
+          onSelect={onSelect} onMenu={onMenu} depth={depth + 1} forceExpand={forceExpand} highlight={highlight} />
       ))}
     </div>
   );
@@ -433,7 +446,7 @@ function CredentialsSection() {
         <div className="flex-1 overflow-y-auto py-1 relative" onClick={() => setCtxMenu(null)}>
           {rootFolders.map(f => (
             <FolderNode key={f.id} folder={f} folders={filteredFolders} selectedId={selectedFolder}
-              onSelect={setSelectedFolder} onMenu={onMenu} depth={0} forceExpand={!!filter} />
+              onSelect={setSelectedFolder} onMenu={onMenu} depth={0} forceExpand={!!filter} highlight={filter} />
           ))}
         </div>
       </div>
