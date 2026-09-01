@@ -99,7 +99,7 @@ function fileIconName(name: string) {
   return 'File';
 }
 
-function CredFilesBlock({ credentialId }: { credentialId: number }) {
+function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number; onCountChange?: (count: number) => void }) {
   const [files, setFiles] = useState<CredFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -110,7 +110,7 @@ function CredFilesBlock({ credentialId }: { credentialId: number }) {
     setLoading(true);
     api(`resource=files&credential_id=${credentialId}`).then(d => {
       setLoading(false);
-      if (Array.isArray(d)) setFiles(d);
+      if (Array.isArray(d)) { setFiles(d); onCountChange?.(d.length); }
     });
   };
 
@@ -240,6 +240,7 @@ function CredentialsSection() {
   const [creds, setCreds] = useState<Credential[]>([]);
   const [selectedCred, setSelectedCred] = useState<Credential | null>(null);
   const [filesContainer, setFilesContainer] = useState<{ id: number; folder_id: number; name: string } | null>(null);
+  const [filesCount, setFilesCount] = useState(0);
   const [viewingFiles, setViewingFiles] = useState(false);
   const [form, setForm] = useState<Omit<Credential, 'id'>>(EMPTY_CRED);
   const [dirty, setDirty] = useState(false);
@@ -295,7 +296,12 @@ function CredentialsSection() {
   });
 
   const loadFilesContainer = (fid: number) => api(`resource=files-container&folder_id=${fid}`).then(d => {
-    if (d && d.id) setFilesContainer(d);
+    if (d && d.id) {
+      setFilesContainer(d);
+      api(`resource=files&credential_id=${d.id}`).then(files => {
+        if (Array.isArray(files)) setFilesCount(files.length);
+      });
+    }
   });
 
   useEffect(() => { loadFolders(); }, []);
@@ -460,7 +466,7 @@ function CredentialsSection() {
                   }`}
                 >
                   <Icon name="Paperclip" size={13} />
-                  (ФАЙЛЫ)
+                  ФАЙЛЫ ({filesCount} шт)
                 </button>
               )}
             </div>
@@ -469,7 +475,7 @@ function CredentialsSection() {
             <div className="flex-1 overflow-y-auto p-5">
               {viewingFiles && filesContainer ? (
                 <div className="max-w-xl">
-                  <CredFilesBlock credentialId={filesContainer.id} />
+                  <CredFilesBlock credentialId={filesContainer.id} onCountChange={setFilesCount} />
                 </div>
               ) : (selectedCred || dirty) ? (
                 <div className="space-y-4 max-w-xl">
