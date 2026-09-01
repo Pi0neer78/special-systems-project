@@ -197,14 +197,16 @@ function buildTree(folders: Folder[], parentId: number | null = null): Folder[] 
 }
 
 function FolderNode({
-  folder, folders, selectedId, onSelect, onMenu, depth,
+  folder, folders, selectedId, onSelect, onMenu, depth, forceExpand,
 }: {
   folder: Folder; folders: Folder[]; selectedId: number | null;
   onSelect: (id: number) => void; onMenu: (e: React.MouseEvent, folder: Folder) => void; depth: number;
+  forceExpand?: boolean;
 }) {
   const isRoot = folder.parent_id === null;
   const [open, setOpen] = useState(isRoot);
   const children = buildTree(folders, folder.id);
+  const effectiveOpen = forceExpand || open;
 
   return (
     <div>
@@ -217,15 +219,15 @@ function FolderNode({
         onContextMenu={e => { e.preventDefault(); onMenu(e, folder); }}
       >
         {children.length > 0
-          ? <Icon name={open ? 'ChevronDown' : 'ChevronRight'} size={12} className="text-muted-foreground shrink-0" />
+          ? <Icon name={effectiveOpen ? 'ChevronDown' : 'ChevronRight'} size={12} className="text-muted-foreground shrink-0" />
           : <span className="w-3 shrink-0" />
         }
         <Icon name={isRoot ? 'Database' : 'Folder'} size={13} className={selectedId === folder.id ? 'text-primary' : 'text-muted-foreground'} />
         <span className="text-sm truncate">{folder.name}</span>
       </div>
-      {open && children.map(ch => (
+      {effectiveOpen && children.map(ch => (
         <FolderNode key={ch.id} folder={ch} folders={folders} selectedId={selectedId}
-          onSelect={onSelect} onMenu={onMenu} depth={depth + 1} />
+          onSelect={onSelect} onMenu={onMenu} depth={depth + 1} forceExpand={forceExpand} />
       ))}
     </div>
   );
@@ -385,9 +387,34 @@ function CredentialsSection() {
     loadFolders();
   };
 
-  const filteredFolders = filter
-    ? folders.filter(f => f.name.toLowerCase().includes(filter.toLowerCase()))
-    : folders;
+  const filteredFolders = (() => {
+    if (!filter) return folders;
+    const q = filter.toLowerCase();
+    const byId = new Map(folders.map(f => [f.id, f]));
+    const keep = new Set<number>();
+
+    const addAncestors = (f: Folder) => {
+      let cur: Folder | undefined = f;
+      while (cur) {
+        if (keep.has(cur.id)) break;
+        keep.add(cur.id);
+        cur = cur.parent_id !== null ? byId.get(cur.parent_id) : undefined;
+      }
+    };
+    const addDescendants = (id: number) => {
+      for (const ch of folders.filter(f => f.parent_id === id)) {
+        if (!keep.has(ch.id)) { keep.add(ch.id); addDescendants(ch.id); }
+      }
+    };
+
+    for (const f of folders) {
+      if (f.name.toLowerCase().includes(q)) {
+        addAncestors(f);
+        addDescendants(f.id);
+      }
+    }
+    return folders.filter(f => keep.has(f.id));
+  })();
 
   const rootFolders = buildTree(filteredFolders, null);
 
@@ -406,7 +433,7 @@ function CredentialsSection() {
         <div className="flex-1 overflow-y-auto py-1 relative" onClick={() => setCtxMenu(null)}>
           {rootFolders.map(f => (
             <FolderNode key={f.id} folder={f} folders={filteredFolders} selectedId={selectedFolder}
-              onSelect={setSelectedFolder} onMenu={onMenu} depth={0} />
+              onSelect={setSelectedFolder} onMenu={onMenu} depth={0} forceExpand={!!filter} />
           ))}
         </div>
       </div>
