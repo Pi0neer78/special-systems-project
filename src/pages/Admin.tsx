@@ -923,6 +923,7 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
   const [modal, setModal] = useState<{ open: boolean; item?: Client }>({ open: false });
   const [form, setForm] = useState<typeof emptyClient>(emptyClient);
   const [clientDbs, setClientDbs] = useState<ClientDB[]>([]);
+  const [removedDbIds, setRemovedDbIds] = useState<number[]>([]);
   const [dbModal, setDbModal] = useState<{ open: boolean; item?: ClientDB; clientId?: number }>({ open: false });
   const [dbForm, setDbForm] = useState({ config_database_id: '', current_config_version: '', update_date: '' });
   const [saving, setSaving] = useState(false);
@@ -946,6 +947,7 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
   const openAdd = () => {
     setForm(emptyClient);
     setClientDbs([]);
+    setRemovedDbIds([]);
     setCtab('general');
     setModal({ open: true });
   };
@@ -960,6 +962,7 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
       contact_name: c.contact_name || '', contact_phone: c.contact_phone || '', contact_email: c.contact_email || '',
     });
     setClientDbs(c.databases || []);
+    setRemovedDbIds([]);
     setCtab('general');
     setModal({ open: true, item: c });
   };
@@ -982,6 +985,9 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
       const res = await api('resource=clients', 'POST', payload);
       clientId = res.id;
     }
+    for (const dbId of removedDbIds) {
+      await api(`resource=clients&id=${clientId}&sub=db&subid=${dbId}`, 'DELETE');
+    }
     for (const db of clientDbs) {
       if (!db.id && clientId) {
         await api(`resource=clients&id=${clientId}&sub=db`, 'POST', { config_database_id: db.config_database_id, current_config_version: db.current_config_version, update_date: db.update_date || null });
@@ -989,6 +995,7 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
         await api(`resource=clients&id=${db.client_id}&sub=db&subid=${db.id}`, 'PUT', { config_database_id: db.config_database_id, current_config_version: db.current_config_version, update_date: db.update_date || null });
       }
     }
+    setRemovedDbIds([]);
     setSaving(false);
     setModal({ open: false });
     load();
@@ -1018,7 +1025,11 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
   };
 
   const removeDbRow = (idx: number) => {
-    setClientDbs(prev => prev.filter((_, i) => i !== idx));
+    setClientDbs(prev => {
+      const row = prev[idx];
+      if (row?.id) setRemovedDbIds(ids => [...ids, row.id]);
+      return prev.filter((_, i) => i !== idx);
+    });
   };
 
   const updateDbRow = (idx: number, field: string, value: string) => {

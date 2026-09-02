@@ -277,6 +277,14 @@ def handler(event: dict, context) -> dict:
                             """, (body['config_database_id'], body.get('current_config_version'), body.get('update_date') or None, subid))
                             conn.commit()
                             return ok({'id': subid})
+                        if method == 'DELETE':
+                            cur.execute(f"DELETE FROM {SCHEMA}.update_history WHERE client_database_id=%s", [subid])
+                            cur.execute(f"DELETE FROM {SCHEMA}.client_databases WHERE id=%s RETURNING id", [subid])
+                            row = cur.fetchone()
+                            conn.commit()
+                            if not row:
+                                return err('База клиента не найдена', 404)
+                            return ok({'deleted': row['id']})
                 else:
                     if method == 'PUT':
                         pwd_part = ', password_hash=%s' if body.get('password') else ''
