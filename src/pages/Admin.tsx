@@ -811,8 +811,9 @@ function ClientPrintView({ client }: { client: Client }) {
   .badge.blocked{background:#fee2e2;color:#991b1b}
   .badge.inn{background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd}
   /* Personal cabinet CTA */
-  .cabinet-cta{margin-top:12px;padding:12px 16px;background:#0f172a;border-radius:8px;font-size:15px;font-weight:600;color:#fff;line-height:1.4;text-align:center}
+  .cabinet-cta{margin-top:12px;padding:14px 16px;background:#0f172a;border-radius:8px;font-size:19px;font-weight:700;color:#fff;line-height:1.4;text-align:center}
   .cabinet-cta a{color:#60a5fa;font-weight:700;text-decoration:none}
+  .field.credential span{font-size:17px;font-weight:700;color:#0f172a}
   /* Sections */
   .section{margin-bottom:16px}
   .section-title{font-family:'Oswald',sans-serif;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:2px;color:#2563eb;border-bottom:1px solid #e2e8f0;padding-bottom:5px;margin-bottom:10px}
@@ -866,8 +867,8 @@ function ClientPrintView({ client }: { client: Client }) {
 <div class="section">
   <div class="section-title">Реквизиты доступа</div>
   <div class="info-grid">
-    <div class="field"><label>Логин в системе</label><span>${v(client.login)}</span></div>
-    <div class="field"><label>Пароль</label><span>${v(client.password_plain)}</span></div>
+    <div class="field credential"><label>Логин в системе</label><span>${v(client.login)}</span></div>
+    <div class="field credential"><label>Пароль</label><span>${v(client.password_plain)}</span></div>
     <div class="field"><label>Адрес</label><span>${v(client.address)}</span></div>
   </div>
   <div class="cabinet-cta">Для доступа к личному кабинету перейдите на сайт <a href="https://ssys.su">https://ssys.su</a></div>
