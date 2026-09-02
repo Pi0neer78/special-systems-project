@@ -124,6 +124,17 @@ function launchRMS(id: string, password: string) {
   toast.success('RMS запущен с подключением к ' + id);
 }
 
+async function launchRuDesktop(id: string, password: string) {
+  if (!id) { toast.error('Не заполнен ID3 для RuDesktop'); return; }
+  const copied = password ? await copyToClipboard(password) : false;
+  window.location.href = `rudesktop:${id}`;
+  if (password && !copied) {
+    toast.error('RuDesktop запущен, но пароль скопировать не удалось — скопируйте вручную');
+  } else {
+    toast.success(copied ? 'RuDesktop запущен, пароль скопирован — вставьте Ctrl+V' : 'RuDesktop запущен');
+  }
+}
+
 function CopyBtn({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -622,18 +633,18 @@ function CredentialsSection() {
                       { n: 3, lk: 'login3' as const, pk: 'password3' as const, icon: '/icons/rudesktop.png', app: 'RuDesktop' },
                     ]).map(({ n, lk, pk, icon, app }) => (
                       <div key={n} className="grid grid-cols-[20px_28px_minmax(0,1fr)_auto_36px_minmax(0,1fr)_auto] items-center gap-2">
-                        {n === 1 || n === 2 ? (
-                          <button
-                            type="button"
-                            onClick={() => n === 1 ? launchAnyDesk(form.login1, form.password1) : launchRMS(form.login2, form.password2)}
-                            title={n === 1 ? 'Запустить AnyDesk с этим ID' : 'Запустить RMS с этим ID и паролем'}
-                            className="w-5 h-5 shrink-0 rounded hover:scale-110 transition-transform"
-                          >
-                            <img src={icon} alt={app} className="w-5 h-5 rounded" />
-                          </button>
-                        ) : (
-                          <img src={icon} alt={app} title={app} className="w-5 h-5 rounded shrink-0" />
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (n === 1) launchAnyDesk(form.login1, form.password1);
+                            else if (n === 2) launchRMS(form.login2, form.password2);
+                            else launchRuDesktop(form.login3, form.password3);
+                          }}
+                          title={n === 1 ? 'Запустить AnyDesk с этим ID' : n === 2 ? 'Запустить RMS с этим ID и паролем' : 'Запустить RuDesktop с этим ID'}
+                          className="w-5 h-5 shrink-0 rounded hover:scale-110 transition-transform"
+                        >
+                          <img src={icon} alt={app} className="w-5 h-5 rounded" />
+                        </button>
                         <span className="text-xs text-muted-foreground shrink-0">ID{n}</span>
                         <Input value={form[lk] || ''} onChange={ff(lk)} className="h-7 min-w-0 bg-secondary/40 border-border text-sm font-mono px-2" placeholder={`Логин ${n}`} />
                         <CopyBtn value={form[lk] || ''} />
