@@ -280,6 +280,8 @@ def handler(event: dict, context) -> dict:
             if is_client:
                 where_parts.append(f"t.client_id = {client_id_from_token}")
             if is_staff:
+                if admin_role != 'admin':
+                    where_parts.append(f"t.assignee_id = {admin_user_id}")
                 if qs.get('status'):
                     raw = qs['status']
                     vals = [v.strip().replace("'", "''") for v in raw.split(',') if v.strip() in STATUSES]
@@ -317,7 +319,11 @@ def handler(event: dict, context) -> dict:
         # Response: { id, client_id, client_name, ... }
         if method == 'GET' and qs.get('id'):
             ticket_id = int(qs['id'])
-            extra_where = f"AND t.client_id = {client_id_from_token}" if is_client else ""
+            extra_where = ""
+            if is_client:
+                extra_where = f"AND t.client_id = {client_id_from_token}"
+            elif is_staff and admin_role != 'admin':
+                extra_where = f"AND t.assignee_id = {admin_user_id}"
             cur.execute(f"""
                 SELECT t.*,
                        c.name as client_name,
@@ -378,6 +384,16 @@ def handler(event: dict, context) -> dict:
                 return resp(400, {'error': 'Не указан id заявки'})
             if not is_staff:
                 return resp(403, {'error': 'Недостаточно прав'})
+            if admin_role != 'admin':
+                cur.execute(f"SELECT assignee_id FROM {SCHEMA}.tickets WHERE id = %s", (ticket_id,))
+                existing = cur.fetchone()
+                if not existing:
+                    cur.close(); conn.close()
+                    return resp(404, {'error': 'Заявка не найдена'})
+                # Разрешено: заявка ещё не назначена (можно взять в работу) или назначена этому сотруднику
+                if existing['assignee_id'] is not None and existing['assignee_id'] != admin_user_id:
+                    cur.close(); conn.close()
+                    return resp(403, {'error': 'Заявка назначена другому сотруднику'})
 
             body = json.loads(event.get('body') or '{}')
             sets = []
@@ -430,6 +446,27 @@ def handler(event: dict, context) -> dict:
             if not ticket:
                 return resp(404, {'error': 'Заявка не найдена'})
             return resp(200, ticket)
+
+        # ── DELETE удалить заявку (только администратор) ─────────────────────
+        # DELETE ?resource=tickets&id=N
+        if method == 'DELETE':
+            ticket_id = int(qs.get('id', 0))
+            if not ticket_id:
+                cur.close()
+                conn.close()
+                return resp(400, {'error': 'Не указан id заявки'})
+            if admin_role != 'admin':
+                cur.close()
+                conn.close()
+                return resp(403, {'error': 'Удалять заявки может только администратор'})
+            cur.execute(f"DELETE FROM {SCHEMA}.tickets WHERE id = %s RETURNING id", (ticket_id,))
+            row = cur.fetchone()
+            conn.commit()
+            cur.close()
+            conn.close()
+            if not row:
+                return resp(404, {'error': 'Заявка не найдена'})
+            return resp(200, {'ok': True})
 
         cur.close()
         conn.close()

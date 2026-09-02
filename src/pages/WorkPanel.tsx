@@ -1151,13 +1151,24 @@ function isOverdue(t: Ticket) {
   return !t.resolved_at && t.deadline && new Date(t.deadline) < new Date();
 }
 
-function TicketsSection({ token }: { token: string }) {
+const PRIORITY_COLOR: Record<string, string> = { low: 'gray', medium: 'blue', high: 'yellow', urgent: 'red' };
+const TICKETS_VIEW_KEY = 'wp_tickets_view';
+
+function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [meta, setMeta] = useState<TicketMeta | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterStatuses, setFilterStatuses] = useState<Set<string>>(new Set());
   const [filterClient, setFilterClient] = useState('');
   const [filterType, setFilterType] = useState('');
+  const [view, setView] = useState<'table' | 'cards' | 'board'>(() => (localStorage.getItem(TICKETS_VIEW_KEY) as 'table' | 'cards' | 'board') || 'table');
+  const [dragTicketId, setDragTicketId] = useState<number | null>(null);
+  const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
+
+  const changeView = (v: 'table' | 'cards' | 'board') => {
+    setView(v);
+    localStorage.setItem(TICKETS_VIEW_KEY, v);
+  };
 
   const toggleStatus = (val: string) =>
     setFilterStatuses(prev => {
@@ -1168,7 +1179,9 @@ function TicketsSection({ token }: { token: string }) {
   const [editModal, setEditModal] = useState<Ticket | null>(null);
   const [editForm, setEditForm] = useState({ status: '', assignee_id: '', result: '' });
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [detailModal, setDetailModal] = useState<Ticket | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<Ticket | null>(null);
 
   const apiHeaders = { 'X-Admin-Token': token };
 
@@ -1218,6 +1231,29 @@ function TicketsSection({ token }: { token: string }) {
     load();
   };
 
+  const changeTicketStatus = async (t: Ticket, status: string) => {
+    await fetch(`${TICKETS_URL}?resource=tickets&id=${t.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({ status }),
+    });
+    load();
+  };
+
+  const deleteTicket = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    await fetch(`${TICKETS_URL}?resource=tickets&id=${confirmDelete.id}`, {
+      method: 'DELETE',
+      headers: { 'X-Admin-Token': token },
+    });
+    setDeleting(false);
+    setConfirmDelete(null);
+    setDetailModal(null);
+    setEditModal(null);
+    load();
+  };
+
   return (
     <div>
       {/* Фильтры */}
@@ -1246,10 +1282,23 @@ function TicketsSection({ token }: { token: string }) {
         <button onClick={load} className="h-8 px-3 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
           <Icon name="RefreshCw" size={12} />
         </button>
+        <div className="flex items-center gap-0.5 bg-secondary/30 border border-border rounded-md p-0.5 h-8">
+          <button onClick={() => changeView('table')} title="Таблица"
+            className={`h-6 w-7 rounded flex items-center justify-center transition-colors ${view === 'table' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+            <Icon name="Table" size={13} />
+          </button>
+          <button onClick={() => changeView('cards')} title="Стикеры"
+            className={`h-6 w-7 rounded flex items-center justify-center transition-colors ${view === 'cards' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+            <Icon name="LayoutGrid" size={13} />
+          </button>
+          <button onClick={() => changeView('board')} title="Доска (канбан)"
+            className={`h-6 w-7 rounded flex items-center justify-center transition-colors ${view === 'board' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
+            <Icon name="Columns3" size={13} />
+          </button>
+        </div>
         <span className="ml-auto text-xs text-muted-foreground self-center">{tickets.length} заявок</span>
       </div>
 
-      {/* Таблица */}
       {loading ? (
         <div className="flex items-center justify-center h-40 text-muted-foreground">
           <Icon name="Loader" size={18} className="animate-spin mr-2" /> Загрузка...
@@ -1259,7 +1308,7 @@ function TicketsSection({ token }: { token: string }) {
           <Icon name="TicketCheck" size={36} className="opacity-20" />
           <p className="text-sm">Заявок не найдено</p>
         </div>
-      ) : (
+      ) : view === 'table' ? (
         <div className="overflow-auto">
           <table className="w-full text-sm border-collapse">
             <thead>
@@ -1280,13 +1329,16 @@ function TicketsSection({ token }: { token: string }) {
                     <td className="px-3 py-2.5 font-medium whitespace-nowrap">{t.client_name}</td>
                     <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{t.problem_type}</td>
                     <td className="px-3 py-2.5 max-w-[220px]">
-                      <p className={`truncate text-sm ${overdue ? 'text-red-400 font-bold' : ''}`}>{t.description}</p>
+                      <button className="truncate text-sm text-left hover:text-primary transition-colors block w-full" onClick={() => setDetailModal(t)}>
+                        <span className={overdue ? 'text-red-400 font-bold' : ''}>{t.description}</span>
+                      </button>
                     </td>
                     <td className={`px-3 py-2.5 text-xs font-medium whitespace-nowrap ${pr.color}`}>{pr.label}</td>
                     <td className="px-3 py-2.5 whitespace-nowrap">
-                      <span className={`flex items-center gap-1 text-xs font-medium ${st.color}`}>
-                        <Icon name={st.icon} size={12} /> {st.label}
-                      </span>
+                      <select value={t.status} onChange={e => changeTicketStatus(t, e.target.value)}
+                        className={`bg-transparent text-xs font-medium focus:outline-none ${st.color}`}>
+                        {STATUSES_LIST.map(s => <option key={s.value} value={s.value} className="text-foreground bg-background">{s.label}</option>)}
+                      </select>
                     </td>
                     <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{new Date(t.submitted_at).toLocaleString('ru')}</td>
                     <td className={`px-3 py-2.5 text-xs whitespace-nowrap ${overdue ? 'text-red-400 font-bold' : 'text-muted-foreground'}`}>
@@ -1303,6 +1355,11 @@ function TicketsSection({ token }: { token: string }) {
                         <Button size="sm" className="h-7 text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => openEdit(t)}>
                           <Icon name="Pencil" size={12} />
                         </Button>
+                        {isAdmin && (
+                          <Button size="sm" className="h-7 text-xs bg-destructive/15 text-destructive border border-destructive/30 hover:bg-destructive/25" onClick={() => setConfirmDelete(t)}>
+                            <Icon name="Trash2" size={12} />
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -1310,6 +1367,119 @@ function TicketsSection({ token }: { token: string }) {
               })}
             </tbody>
           </table>
+        </div>
+      ) : view === 'cards' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+          {tickets.map(t => {
+            const st = STATUS_LABELS[t.status] || STATUS_LABELS.new;
+            const pr = PRIORITY_LABELS[t.priority] || PRIORITY_LABELS.medium;
+            const overdue = isOverdue(t);
+            return (
+              <div key={t.id} className={`relative rounded-lg border p-3.5 flex flex-col gap-2 shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md ${colorSticky(PRIORITY_COLOR[t.priority] || 'blue')} ${overdue ? 'ring-1 ring-red-500/40' : ''}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <button className="text-left font-medium text-sm break-words hover:text-primary transition-colors" onClick={() => setDetailModal(t)}>
+                    #{t.id} · {t.client_name}
+                  </button>
+                  <div className="flex gap-0.5 shrink-0">
+                    <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" onClick={() => openEdit(t)} title="Редактировать">
+                      <Icon name="Pencil" size={12} />
+                    </button>
+                    {isAdmin && (
+                      <button className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-black/10 transition-colors" onClick={() => setConfirmDelete(t)} title="Удалить">
+                        <Icon name="Trash2" size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="text-xs text-muted-foreground">{t.problem_type}</div>
+                <p className="text-xs text-muted-foreground line-clamp-3">{t.description}</p>
+                <div className={`text-xs flex items-center gap-1 ${overdue ? 'text-red-400 font-semibold' : 'text-muted-foreground'}`}>
+                  <Icon name="Clock" size={11} />
+                  {t.deadline ? new Date(t.deadline).toLocaleString('ru') : 'без срока'}
+                </div>
+                <div className="text-xs text-muted-foreground truncate">
+                  {t.assignee_name || t.assignee_login || 'не назначен'}
+                </div>
+                <div className={`text-xs font-medium ${pr.color}`}>{pr.label}</div>
+                <select value={t.status} onChange={e => changeTicketStatus(t, e.target.value)}
+                  className={`mt-auto h-7 bg-black/10 rounded text-xs font-medium px-1.5 focus:outline-none ${st.color}`}>
+                  {STATUSES_LIST.map(s => <option key={s.value} value={s.value} className="text-foreground bg-background">{s.label}</option>)}
+                </select>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {STATUSES_LIST.map(col => {
+            const colTickets = tickets.filter(t => t.status === col.value);
+            const stMeta = STATUS_LABELS[col.value];
+            const isOver = dragOverStatus === col.value;
+            return (
+              <div key={col.value}
+                onDragOver={e => { e.preventDefault(); setDragOverStatus(col.value); }}
+                onDragLeave={() => setDragOverStatus(prev => (prev === col.value ? null : prev))}
+                onDrop={e => {
+                  e.preventDefault();
+                  setDragOverStatus(null);
+                  const id = dragTicketId;
+                  setDragTicketId(null);
+                  if (id === null) return;
+                  const ticket = tickets.find(x => x.id === id);
+                  if (ticket && ticket.status !== col.value) changeTicketStatus(ticket, col.value);
+                }}
+                className={`flex flex-col shrink-0 w-72 rounded-lg border bg-secondary/20 transition-colors ${isOver ? 'border-primary bg-primary/5' : 'border-border'}`}>
+                <div className="flex items-center gap-1.5 px-3 py-2.5 border-b border-border/60">
+                  <Icon name={stMeta.icon} size={13} className={stMeta.color} />
+                  <span className={`text-xs font-semibold uppercase tracking-wide ${stMeta.color}`}>{col.label}</span>
+                  <span className="ml-auto text-xs text-muted-foreground font-mono">{colTickets.length}</span>
+                </div>
+                <div className="flex-1 flex flex-col gap-2 p-2 min-h-[80px]">
+                  {colTickets.map(t => {
+                    const pr = PRIORITY_LABELS[t.priority] || PRIORITY_LABELS.medium;
+                    const overdue = isOverdue(t);
+                    const dragging = dragTicketId === t.id;
+                    return (
+                      <div key={t.id} draggable
+                        onDragStart={e => { setDragTicketId(t.id); e.dataTransfer.effectAllowed = 'move'; }}
+                        onDragEnd={() => { setDragTicketId(null); setDragOverStatus(null); }}
+                        className={`rounded-lg border p-3 flex flex-col gap-1.5 cursor-grab active:cursor-grabbing shadow-sm transition-all ${colorSticky(PRIORITY_COLOR[t.priority] || 'blue')} ${overdue ? 'ring-1 ring-red-500/40' : ''} ${dragging ? 'opacity-40' : 'opacity-100'}`}>
+                        <div className="flex items-start justify-between gap-1.5">
+                          <button className="text-left font-medium text-sm break-words hover:text-primary transition-colors" onClick={() => setDetailModal(t)}>
+                            #{t.id} · {t.client_name}
+                          </button>
+                          <div className="flex gap-0.5 shrink-0">
+                            <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" onClick={() => openEdit(t)} title="Редактировать">
+                              <Icon name="Pencil" size={11} />
+                            </button>
+                            {isAdmin && (
+                              <button className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-black/10 transition-colors" onClick={() => setConfirmDelete(t)} title="Удалить">
+                                <Icon name="Trash2" size={11} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="text-xs text-muted-foreground truncate">{t.problem_type}</div>
+                        <div className={`text-xs flex items-center gap-1 ${overdue ? 'text-red-400 font-semibold' : 'text-muted-foreground'}`}>
+                          <Icon name="Clock" size={11} />
+                          {t.deadline ? new Date(t.deadline).toLocaleDateString('ru') : 'без срока'}
+                        </div>
+                        <div className={`text-xs font-medium ${pr.color}`}>{pr.label}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          {t.assignee_name || t.assignee_login || 'не назначен'}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {colTickets.length === 0 && (
+                    <div className="flex-1 flex items-center justify-center text-xs text-muted-foreground/50 py-6">
+                      пусто
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
@@ -1347,6 +1517,12 @@ function TicketsSection({ token }: { token: string }) {
                   rows={4} className="bg-secondary/40 border-border resize-none text-sm" placeholder="Описание результата работы по заявке..." />
               </div>
               <div className="flex gap-3">
+                {isAdmin && (
+                  <Button variant="outline" onClick={() => editModal && setConfirmDelete(editModal)}
+                    className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive">
+                    <Icon name="Trash2" size={14} />
+                  </Button>
+                )}
                 <Button variant="outline" onClick={() => setEditModal(null)} className="flex-1">Отмена</Button>
                 <Button disabled={saving} onClick={saveEdit} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90">
                   {saving ? 'Сохранение...' : 'Сохранить'}
@@ -1400,6 +1576,12 @@ function TicketsSection({ token }: { token: string }) {
                   </div>
                 )}
                 <div className="flex gap-3 pt-1">
+                  {isAdmin && (
+                    <Button variant="outline" onClick={() => setConfirmDelete(t)}
+                      className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive">
+                      <Icon name="Trash2" size={14} />
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={() => setDetailModal(null)} className="flex-1">Закрыть</Button>
                   <Button className="flex-1 bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => { setDetailModal(null); openEdit(t); }}>
                     <Icon name="Pencil" size={13} className="mr-1.5" /> Редактировать
@@ -1408,6 +1590,27 @@ function TicketsSection({ token }: { token: string }) {
               </div>
             );
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* Подтверждение удаления */}
+      <Dialog open={!!confirmDelete} onOpenChange={() => setConfirmDelete(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Icon name="TriangleAlert" size={17} className="text-destructive" />
+              Удалить заявку?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Заявка #{confirmDelete?.id} от «{confirmDelete?.client_name}» будет удалена без возможности восстановления.
+          </p>
+          <div className="flex gap-3 pt-1">
+            <Button variant="outline" onClick={() => setConfirmDelete(null)} className="flex-1">Отмена</Button>
+            <Button disabled={deleting} onClick={deleteTicket} className="flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deleting ? 'Удаление...' : 'Удалить'}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -2566,7 +2769,7 @@ export default function WorkPanel() {
         )}
         {tab === 'tickets' && (
           <div className="container py-6">
-            <TicketsSection token={localStorage.getItem(TOKEN_KEY) || ''} />
+            <TicketsSection token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={authInfo.role === 'admin'} />
           </div>
         )}
         {tab === 'tasks' && (
