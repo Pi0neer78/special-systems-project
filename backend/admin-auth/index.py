@@ -85,19 +85,20 @@ def handler(event: dict, context) -> dict:
         body = json.loads(event.get('body') or '{}')
         login = body.get('login', '').strip()
         password = body.get('password', '')
+        access_key = body.get('access_key', '')
 
-        # Суперадмин
+        # Суперадмин — ключ не требуется
         if login == ADMIN_LOGIN and password == ADMIN_PASSWORD:
             token = make_token(ADMIN_LOGIN, 'admin', 0)
             return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'token': token, 'role': 'admin', 'user_id': 0})}
 
-        # Обычный пользователь из БД
+        # Обычный пользователь из БД — обязателен ключ доступа
         try:
             conn = psycopg2.connect(os.environ['DATABASE_URL'])
             cur = conn.cursor(cursor_factory=RealDictCursor)
             pwd_hash = hashlib.sha256(password.encode()).hexdigest()
             cur.execute(
-                f"SELECT id, login, full_name FROM {SCHEMA}.admin_users WHERE login=%s AND password_hash=%s AND is_active=TRUE",
+                f"SELECT id, login, full_name, access_key FROM {SCHEMA}.admin_users WHERE login=%s AND password_hash=%s AND is_active=TRUE",
                 (login, pwd_hash)
             )
             user = cur.fetchone()
@@ -106,14 +107,23 @@ def handler(event: dict, context) -> dict:
         except Exception as e:
             return {'statusCode': 500, 'headers': CORS, 'body': json.dumps({'error': str(e)})}
 
-        if user:
-            global _cached_users, _cached_ts
-            _cached_users = None  # сброс кэша
-            token = make_token(user['login'], 'user', user['id'])
-            return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({
-                'token': token, 'role': 'user', 'user_id': user['id'], 'login': user['login'], 'full_name': user['full_name']
-            })}
+        if not user:
+            return {'statusCode': 401, 'headers': CORS, 'body': json.dumps({'error': 'Неверный логин или пароль'})}
 
-        return {'statusCode': 401, 'headers': CORS, 'body': json.dumps({'error': 'Неверный логин или пароль'})}
+        if not user['access_key']:
+            return {'statusCode': 403, 'headers': CORS, 'body': json.dumps({'error': 'Для пользователя не сформирован ключ доступа. Обратитесь к администратору.', 'code': 'no_key_configured'})}
+
+        if not access_key:
+            return {'statusCode': 403, 'headers': CORS, 'body': json.dumps({'error': 'Требуется файл ключа доступа', 'code': 'key_required'})}
+
+        if not hmac.compare_digest(access_key, user['access_key']):
+            return {'statusCode': 403, 'headers': CORS, 'body': json.dumps({'error': 'Неверный файл ключа доступа', 'code': 'key_invalid'})}
+
+        global _cached_users, _cached_ts
+        _cached_users = None  # сброс кэша
+        token = make_token(user['login'], 'user', user['id'])
+        return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({
+            'token': token, 'role': 'user', 'user_id': user['id'], 'login': user['login'], 'full_name': user['full_name']
+        })}
 
     return {'statusCode': 405, 'headers': CORS, 'body': ''}

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import ThemeToggle from '@/components/ThemeToggle';
 import workPanelBg from '@/assets/work-panel-bg.jpg';
+import { tryReadStoredKey, pickAndReadKey, pickKeyViaInput, clearKeyFileHandle, isFileSystemAccessSupported } from '@/lib/keyFileStore';
 import {
   Dialog,
   DialogContent,
@@ -2080,19 +2081,78 @@ function TasksSection({ token }: { token: string }) {
 
 type AuthInfo = { role: 'admin' | 'user'; user_id: number; login: string; full_name?: string };
 
+const SUPER_ADMIN_LOGIN = 'Pioneer78';
+
 function WorkLogin({ onLogin }: { onLogin: (info: AuthInfo) => void }) {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [keyStatus, setKeyStatus] = useState<'idle' | 'reading' | 'need_pick' | 'ready'>('idle');
+  const [keyValue, setKeyValue] = useState<string | null>(null);
+  const [keyFileName, setKeyFileName] = useState('');
+
+  const isSuperAdmin = login.trim() === SUPER_ADMIN_LOGIN;
+
+  // При изменении логина пробуем молча прочитать ранее запомненный файл ключа
+  useEffect(() => {
+    let cancelled = false;
+    const trimmed = login.trim();
+    if (!trimmed || isSuperAdmin) {
+      setKeyStatus('idle'); setKeyValue(null); setKeyFileName('');
+      return;
+    }
+    setKeyStatus('reading');
+    tryReadStoredKey(trimmed).then(key => {
+      if (cancelled) return;
+      if (key) {
+        setKeyValue(key);
+        setKeyFileName('ключ найден автоматически');
+        setKeyStatus('ready');
+      } else {
+        setKeyValue(null);
+        setKeyStatus('need_pick');
+      }
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [login]);
+
+  const choosePicker = async () => {
+    const trimmed = login.trim();
+    if (!trimmed) { toast.error('Сначала введите логин'); return; }
+    let key: string | null = null;
+    if (isFileSystemAccessSupported()) {
+      key = await pickAndReadKey(trimmed);
+    } else {
+      key = await pickKeyViaInput();
+    }
+    if (key) {
+      setKeyValue(key);
+      setKeyFileName('файл выбран');
+      setKeyStatus('ready');
+    }
+  };
+
+  const forgetKeyFile = async () => {
+    const trimmed = login.trim();
+    if (trimmed) await clearKeyFileHandle(trimmed);
+    setKeyValue(null);
+    setKeyFileName('');
+    setKeyStatus('need_pick');
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isSuperAdmin && !keyValue) {
+      setError('Укажите местоположение файла ключа доступа');
+      return;
+    }
     setLoading(true); setError('');
     const res = await fetch(AUTH_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ login, password }),
+      body: JSON.stringify({ login, password, access_key: keyValue || undefined }),
     }).then(r => r.json());
     setLoading(false);
     if (res.token) {
@@ -2128,6 +2188,33 @@ function WorkLogin({ onLogin }: { onLogin: (info: AuthInfo) => void }) {
             <label className="text-xs text-muted-foreground mb-1 block">Пароль</label>
             <Input type="password" value={password} onChange={e => setPassword(e.target.value)} className="bg-secondary/40 border-border focus-visible:ring-primary" autoComplete="current-password" />
           </div>
+
+          {!isSuperAdmin && login.trim() && (
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Ключ доступа</label>
+              {keyStatus === 'reading' && (
+                <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                  <Icon name="Loader2" size={13} className="animate-spin" /> Проверяю сохранённое местоположение ключа...
+                </p>
+              )}
+              {keyStatus === 'need_pick' && (
+                <Button type="button" variant="outline" onClick={choosePicker} className="w-full border-border h-9 text-sm">
+                  <Icon name="FileKey2" size={14} className="mr-2" /> Выбрать файл ключа
+                </Button>
+              )}
+              {keyStatus === 'ready' && (
+                <div className="flex items-center justify-between gap-2 text-xs bg-secondary/40 border border-border rounded-md px-2.5 py-2">
+                  <span className="flex items-center gap-1.5 text-green-500">
+                    <Icon name="CheckCircle2" size={13} /> {keyFileName}
+                  </span>
+                  <button type="button" onClick={forgetKeyFile} className="text-muted-foreground hover:text-foreground transition-colors">
+                    Изменить
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
           {error && <p className="text-sm text-destructive">{error}</p>}
           <Button type="submit" disabled={loading} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 h-10">
             {loading ? 'Вход...' : 'Войти'}

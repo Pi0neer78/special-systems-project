@@ -2,9 +2,18 @@ import json
 import os
 import hashlib
 import hmac
+import secrets
+import string
 import time
 import psycopg2
 from psycopg2.extras import RealDictCursor
+
+KEY_ALPHABET = string.ascii_letters + string.digits
+KEY_LENGTH = 2048
+
+
+def generate_access_key() -> str:
+    return ''.join(secrets.choice(KEY_ALPHABET) for _ in range(KEY_LENGTH))
 
 SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 't_p34673685_special_systems_proj')
 ADMIN_LOGIN = 'Pioneer78'
@@ -91,7 +100,7 @@ def handler(event: dict, context) -> dict:
         if resource == 'users':
             if not rid:
                 if method == 'GET':
-                    cur.execute(f"SELECT id, login, full_name, is_active, phone, description, created_at FROM {SCHEMA}.admin_users WHERE id != 0 ORDER BY id")
+                    cur.execute(f"SELECT id, login, full_name, is_active, phone, description, created_at, (access_key IS NOT NULL) AS has_key FROM {SCHEMA}.admin_users WHERE id != 0 ORDER BY id")
                     users = [dict(r) for r in cur.fetchall()]
                     # attach linked clients for each user
                     cur.execute(f"""
@@ -137,10 +146,21 @@ def handler(event: dict, context) -> dict:
                     cur.execute(f"UPDATE {SCHEMA}.admin_users SET {', '.join(fields)} WHERE id=%s RETURNING id, login, full_name, is_active, phone, description", vals)
                     conn.commit()
                     return ok(dict(cur.fetchone()))
-                if method == 'PATCH':
+                if method == 'PATCH' and sub != 'genkey':
                     cur.execute(f"UPDATE {SCHEMA}.admin_users SET is_active = NOT is_active, updated_at=NOW() WHERE id=%s RETURNING id, is_active", [rid])
                     conn.commit()
                     return ok(dict(cur.fetchone()))
+                if method == 'POST' and sub == 'genkey':
+                    new_key = generate_access_key()
+                    cur.execute(
+                        f"UPDATE {SCHEMA}.admin_users SET access_key=%s, access_key_created_at=NOW(), updated_at=NOW() WHERE id=%s RETURNING id",
+                        (new_key, rid)
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        return err('Пользователь не найден', 404)
+                    conn.commit()
+                    return ok({'id': row['id'], 'access_key': new_key})
 
         # ── CLIENTS ────────────────────────────────────────────────────────────
         if resource == 'clients':

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
+import { toast } from 'sonner';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,7 +65,7 @@ function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 // ══════════════════════════════════════════════════════════════════════════════
 
 type UserClient = { client_id: number; client_name: string };
-type User = { id: number; login: string; full_name: string; is_active: boolean; phone: string; description: string; clients: UserClient[] };
+type User = { id: number; login: string; full_name: string; is_active: boolean; phone: string; description: string; clients: UserClient[]; has_key?: boolean };
 
 // Панель привязки клиентов к пользователю
 function UserClientsPanel({ user, allClients, onChanged }: {
@@ -248,6 +249,31 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
     load();
   };
 
+  const [genKeyFor, setGenKeyFor] = useState<User | null>(null);
+  const [generatingKey, setGeneratingKey] = useState(false);
+
+  const generateKey = async (u: User) => {
+    setGeneratingKey(true);
+    const res = await api(`resource=users&id=${u.id}&sub=genkey`, 'POST');
+    setGeneratingKey(false);
+    if (!res?.access_key) {
+      toast.error('Не удалось сформировать ключ');
+      return;
+    }
+    const blob = new Blob([res.access_key], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'work-panel-key.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success('Ключ сформирован и сохранён в файл work-panel-key.txt');
+    setGenKeyFor(null);
+    load();
+  };
+
   const q = search.toLowerCase();
   const filtered = users.filter(u =>
     u.login.toLowerCase().includes(q) ||
@@ -362,11 +388,51 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
             <Field label="Описание">
               <Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} className="bg-secondary/40 border-border focus-visible:ring-primary text-sm resize-none" rows={2} />
             </Field>
+            {modal.item && (
+              <Field label="Ключ доступа к рабочей панели">
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => modal.item!.has_key ? setGenKeyFor(modal.item!) : generateKey(modal.item!)}
+                    disabled={generatingKey}
+                    className="border-border h-8"
+                  >
+                    <Icon name="KeyRound" size={14} className="mr-1.5" />
+                    {generatingKey ? 'Формирование...' : modal.item.has_key ? 'Сформировать новый ключ' : 'Сформировать ключ'}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    {modal.item.has_key ? 'Ключ уже выдан пользователю' : 'Без ключа вход в рабочую панель невозможен'}
+                  </span>
+                </div>
+              </Field>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModal({ open: false })} className="border-border">Отмена</Button>
             <Button onClick={save} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
               {saving ? 'Сохранение...' : 'Сохранить'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!genKeyFor} onOpenChange={o => !o && setGenKeyFor(null)}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icon name="TriangleAlert" size={17} className="text-destructive" />
+              Сформировать новый ключ?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Старый файл ключа у пользователя перестанет работать — нужно будет передать ему новый файл work-panel-key.txt.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGenKeyFor(null)}>Нет</Button>
+            <Button disabled={generatingKey} onClick={() => genKeyFor && generateKey(genKeyFor)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {generatingKey ? 'Формирование...' : 'Да'}
             </Button>
           </DialogFooter>
         </DialogContent>
