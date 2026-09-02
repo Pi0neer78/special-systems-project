@@ -2676,7 +2676,7 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
 // NEW TICKET NOTIFIER (звук + системное уведомление о новых заявках)
 // ══════════════════════════════════════════════════════════════════════════════
 
-const TICKET_POLL_MS = 20 * 1000;
+const TICKET_POLL_MS = 60 * 1000;
 
 function NewTicketNotifier({ token }: { token: string }) {
   const seenRef = useRef<Set<number> | null>(null);
