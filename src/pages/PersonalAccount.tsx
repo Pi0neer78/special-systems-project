@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import ThemeToggle from '@/components/ThemeToggle';
+import TicketChat from '@/components/TicketChat';
 
 const TICKETS_URL = 'https://functions.poehali.dev/4866cc97-c798-42d4-a280-d35071d704a8';
 const CLIENT_TOKEN_KEY = 'client_token';
@@ -149,7 +150,7 @@ function NewTicketForm({ token, onCreated, onClose }: { token: string; onCreated
 
 // ─── Детали заявки ───────────────────────────────────────────────────────────
 
-function TicketDetail({ ticket, onClose }: { ticket: Ticket; onClose: () => void }) {
+function TicketDetail({ ticket, token, onClose }: { ticket: Ticket; token: string; onClose: () => void }) {
   const st = STATUS_LABELS[ticket.status] || STATUS_LABELS.new;
   const pr = PRIORITY_LABELS[ticket.priority] || PRIORITY_LABELS.medium;
   const overdue = isOverdue(ticket);
@@ -175,6 +176,7 @@ function TicketDetail({ ticket, onClose }: { ticket: Ticket; onClose: () => void
       </div>
       {ticket.extra_info && <div><p className="text-xs text-muted-foreground mb-1">Дополнительная информация:</p><p className="bg-secondary/30 rounded-md p-3 whitespace-pre-wrap">{ticket.extra_info}</p></div>}
       {ticket.result && <div><p className="text-xs text-muted-foreground mb-1">Результат:</p><p className="bg-green-500/10 border border-green-500/20 rounded-md p-3 whitespace-pre-wrap text-green-300">{ticket.result}</p></div>}
+      <TicketChat ticketId={ticket.id} authHeader={{ 'X-Client-Token': token }} mySenderType="client" />
       <Button variant="outline" onClick={onClose} className="w-full">Закрыть</Button>
     </div>
   );
@@ -281,11 +283,11 @@ function TicketsPanel({ token, onNewClick, refreshSignal }: { token: string; onN
       </div>
 
       <Dialog open={!!detailTicket} onOpenChange={() => setDetailTicket(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display uppercase tracking-wide">Заявка #{detailTicket?.id}</DialogTitle>
           </DialogHeader>
-          {detailTicket && <TicketDetail ticket={detailTicket} onClose={() => setDetailTicket(null)} />}
+          {detailTicket && <TicketDetail ticket={detailTicket} token={token} onClose={() => setDetailTicket(null)} />}
         </DialogContent>
       </Dialog>
     </div>

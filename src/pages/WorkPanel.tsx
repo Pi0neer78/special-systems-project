@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import ThemeToggle from '@/components/ThemeToggle';
+import TicketChat from '@/components/TicketChat';
 import workPanelBg from '@/assets/work-panel-bg.jpg';
 import { tryReadStoredKey, pickAndReadKey, pickKeyViaInput, clearKeyFileHandle, isFileSystemAccessSupported } from '@/lib/keyFileStore';
 import {
@@ -1589,7 +1590,7 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
 
       {/* Модал просмотра */}
       <Dialog open={!!detailModal} onOpenChange={() => setDetailModal(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display uppercase tracking-wide">Заявка #{detailModal?.id} — {detailModal?.client_name}</DialogTitle>
           </DialogHeader>
@@ -1629,6 +1630,7 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
                     <p className="bg-green-500/10 border border-green-500/20 rounded-md p-3 whitespace-pre-wrap text-sm text-green-300">{t.result}</p>
                   </div>
                 )}
+                <TicketChat ticketId={t.id} authHeader={{ 'X-Admin-Token': token }} mySenderType="staff" />
                 <div className="flex gap-3 pt-1">
                   {isAdmin && (
                     <Button variant="outline" onClick={() => setConfirmDelete(t)}

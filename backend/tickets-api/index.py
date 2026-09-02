@@ -3,7 +3,10 @@ import os
 import hashlib
 import hmac
 import time
+import uuid
+import base64
 import psycopg2
+import boto3
 from psycopg2.extras import RealDictCursor
 
 SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 't_p34673685_special_systems_proj')
@@ -29,6 +32,22 @@ STATUSES = ['new', 'in_progress', 'resolved', 'cancelled']
 
 def get_conn():
     return psycopg2.connect(os.environ['DATABASE_URL'])
+
+
+S3_BUCKET = 'files'
+
+
+def get_s3():
+    return boto3.client(
+        's3',
+        endpoint_url='https://bucket.poehali.dev',
+        aws_access_key_id=os.environ['AWS_ACCESS_KEY_ID'],
+        aws_secret_access_key=os.environ['AWS_SECRET_ACCESS_KEY'],
+    )
+
+
+def cdn_url(key: str) -> str:
+    return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
 
 
 # ── Клиентский токен ─────────────────────────────────────────────────────────
@@ -113,6 +132,8 @@ def handler(event: dict, context) -> dict:
       PATCH  ?resource=tickets&id=N         — изменить заявку (только сотрудник)
       GET    ?resource=ticket-meta          — справочники: клиенты, сотрудники, типы, приоритеты
       GET    ?resource=client-databases     — базы данных клиента (только клиент)
+      GET    ?resource=ticket-messages&ticket_id=N   — переписка по заявке
+      POST   ?resource=ticket-messages               — отправить сообщение/файл в переписку
     """
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
@@ -519,5 +540,127 @@ def handler(event: dict, context) -> dict:
         cur.close()
         conn.close()
         return resp(200, rows)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ПЕРЕПИСКА ПО ЗАЯВКЕ
+    # ══════════════════════════════════════════════════════════════════════════
+    if resource == 'ticket-messages':
+        client_token = headers.get('X-Client-Token', '')
+        admin_token = headers.get('X-Admin-Token', '')
+        client_id_from_token = verify_client_token(client_token) if client_token else None
+        admin_user_id, admin_role, admin_login = verify_admin_token(admin_token) if admin_token else (None, None, None)
+
+        is_client = client_id_from_token is not None
+        is_staff = admin_user_id is not None
+
+        if not is_client and not is_staff:
+            return resp(401, {'error': 'Не авторизован'})
+
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        def ticket_access_ok(ticket_id: int) -> bool:
+            cur.execute(f"SELECT client_id, assignee_id FROM {SCHEMA}.tickets WHERE id=%s", (ticket_id,))
+            t = cur.fetchone()
+            if not t:
+                return False
+            if is_client:
+                return t['client_id'] == client_id_from_token
+            if admin_role != 'admin':
+                return t['assignee_id'] == admin_user_id
+            return True
+
+        # ── GET переписка ────────────────────────────────────────────────────
+        # GET ?resource=ticket-messages&ticket_id=N
+        # Response: [ { id, ticket_id, sender_type, sender_id, sender_name, message,
+        #               file_url, file_name, file_size, content_type, created_at }, ... ]
+        if method == 'GET':
+            ticket_id = int(qs.get('ticket_id', 0))
+            if not ticket_id:
+                cur.close(); conn.close()
+                return resp(400, {'error': 'Не указан ticket_id'})
+            if not ticket_access_ok(ticket_id):
+                cur.close(); conn.close()
+                return resp(403, {'error': 'Нет доступа к заявке'})
+            cur.execute(f"""
+                SELECT id, ticket_id, sender_type, sender_id, sender_name, message,
+                       file_url, file_name, file_size, content_type, created_at
+                FROM {SCHEMA}.ticket_messages
+                WHERE ticket_id = %s
+                ORDER BY created_at ASC
+            """, (ticket_id,))
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            return resp(200, rows)
+
+        # ── POST отправить сообщение / файл ──────────────────────────────────
+        # POST ?resource=ticket-messages
+        # Body: { ticket_id, message?, file_base64?, file_name?, content_type? }
+        # Response: созданное сообщение
+        if method == 'POST':
+            body = json.loads(event.get('body') or '{}')
+            ticket_id = int(body.get('ticket_id') or 0)
+            if not ticket_id:
+                cur.close(); conn.close()
+                return resp(400, {'error': 'Не указан ticket_id'})
+            if not ticket_access_ok(ticket_id):
+                cur.close(); conn.close()
+                return resp(403, {'error': 'Нет доступа к заявке'})
+
+            message = (body.get('message') or '').strip() or None
+            file_b64 = body.get('file_base64')
+            file_name = body.get('file_name')
+            content_type = body.get('content_type') or 'application/octet-stream'
+            file_url = None
+            file_size = None
+
+            if file_b64:
+                if len(file_b64) > 15_000_000:
+                    cur.close(); conn.close()
+                    return resp(400, {'error': 'Файл слишком большой'})
+                raw = base64.b64decode(file_b64)
+                ext = ''
+                if file_name and '.' in file_name:
+                    ext = '.' + file_name.rsplit('.', 1)[-1]
+                key = f"ticket-messages/{ticket_id}/{uuid.uuid4().hex}{ext}"
+                get_s3().put_object(Bucket=S3_BUCKET, Key=key, Body=raw, ContentType=content_type)
+                file_url = cdn_url(key)
+                file_size = len(raw)
+
+            if not message and not file_url:
+                cur.close(); conn.close()
+                return resp(400, {'error': 'Пустое сообщение'})
+
+            if is_client:
+                sender_type = 'client'
+                sender_id = client_id_from_token
+                cur.execute(f"SELECT name FROM {SCHEMA}.clients WHERE id=%s", (client_id_from_token,))
+                sender_name = cur.fetchone()['name']
+            else:
+                sender_type = 'staff'
+                sender_id = admin_user_id
+                if admin_user_id == 0:
+                    sender_name = 'Администратор'
+                else:
+                    cur.execute(f"SELECT full_name, login FROM {SCHEMA}.admin_users WHERE id=%s", (admin_user_id,))
+                    u = cur.fetchone()
+                    sender_name = (u['full_name'] or u['login']) if u else admin_login
+
+            cur.execute(f"""
+                INSERT INTO {SCHEMA}.ticket_messages
+                  (ticket_id, sender_type, sender_id, sender_name, message, file_url, file_name, file_size, content_type)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                RETURNING id, ticket_id, sender_type, sender_id, sender_name, message,
+                          file_url, file_name, file_size, content_type, created_at
+            """, (ticket_id, sender_type, sender_id, sender_name, message, file_url, file_name, file_size, content_type))
+            row = cur.fetchone()
+            conn.commit()
+            cur.close()
+            conn.close()
+            return resp(201, row)
+
+        cur.close()
+        conn.close()
 
     return resp(405, {'error': 'Неверный метод или ресурс'})
