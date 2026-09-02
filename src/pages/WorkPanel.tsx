@@ -1252,6 +1252,11 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
 
   useEffect(() => { loadMeta(); }, []);
   useEffect(() => { load(); }, [filterStatuses, filterClient, filterType]);
+  useEffect(() => {
+    const onRefresh = () => load();
+    window.addEventListener('tickets-refresh', onRefresh);
+    return () => window.removeEventListener('tickets-refresh', onRefresh);
+  }, [filterStatuses, filterClient, filterType]);
 
   const openEdit = (t: Ticket) => {
     setEditForm({
@@ -2709,6 +2714,14 @@ function NewTicketNotifier({ token }: { token: string }) {
       if (fresh.length === 0) return;
 
       audioRef.current?.play().catch(() => {});
+
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+        const utter = new SpeechSynthesisUtterance('Обнаружена новая заявка');
+        utter.lang = 'ru-RU';
+        window.speechSynthesis.speak(utter);
+      }
+
+      window.dispatchEvent(new Event('tickets-refresh'));
 
       fresh.forEach((t: Ticket) => {
         const title = fresh.length === 1 ? 'Новая заявка' : `Новых заявок: ${fresh.length}`;
