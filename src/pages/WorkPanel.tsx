@@ -64,6 +64,20 @@ interface AdminUser { id: number; login: string; full_name: string | null; }
 // COPY BUTTON
 // ══════════════════════════════════════════════════════════════════════════════
 
+function launchAnyDesk(id: string, password: string) {
+  if (!id) { toast.error('Не заполнен ID1 для AnyDesk'); return; }
+  if (password) navigator.clipboard.writeText(password).catch(() => {});
+  window.location.href = `anydesk:${id}`;
+  toast.success(password ? 'AnyDesk запущен, пароль скопирован — вставьте Ctrl+V' : 'AnyDesk запущен');
+}
+
+function launchRMS(id: string, password: string) {
+  if (!id && !password) { toast.error('Не заполнены ID2/пароль для RMS'); return; }
+  const text = [id, password].filter(Boolean).join('   ');
+  navigator.clipboard.writeText(text).catch(() => {});
+  toast.success('ID и пароль RMS скопированы — откройте RMS и вставьте в окно подключения');
+}
+
 function CopyBtn({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -561,7 +575,18 @@ function CredentialsSection() {
                       { n: 3, lk: 'login3' as const, pk: 'password3' as const, icon: '/icons/rudesktop.png', app: 'RuDesktop' },
                     ]).map(({ n, lk, pk, icon, app }) => (
                       <div key={n} className="grid grid-cols-[20px_28px_minmax(0,1fr)_auto_36px_minmax(0,1fr)_auto] items-center gap-2">
-                        <img src={icon} alt={app} title={app} className="w-5 h-5 rounded shrink-0" />
+                        {n === 1 || n === 2 ? (
+                          <button
+                            type="button"
+                            onClick={() => n === 1 ? launchAnyDesk(form.login1, form.password1) : launchRMS(form.login2, form.password2)}
+                            title={n === 1 ? 'Запустить AnyDesk с этим ID' : 'Скопировать ID и пароль для RMS'}
+                            className="w-5 h-5 shrink-0 rounded hover:scale-110 transition-transform"
+                          >
+                            <img src={icon} alt={app} className="w-5 h-5 rounded" />
+                          </button>
+                        ) : (
+                          <img src={icon} alt={app} title={app} className="w-5 h-5 rounded shrink-0" />
+                        )}
                         <span className="text-xs text-muted-foreground shrink-0">ID{n}</span>
                         <Input value={form[lk] || ''} onChange={ff(lk)} className="h-7 min-w-0 bg-secondary/40 border-border text-sm font-mono px-2" placeholder={`Логин ${n}`} />
                         <CopyBtn value={form[lk] || ''} />
