@@ -2120,6 +2120,7 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
     }
     remindedRef.current.delete(current.id);
     snoozeUntilRef.current.delete(current.id);
+    toast.success('Задача отмечена выполненной');
     dismiss();
   };
 
@@ -2141,6 +2142,7 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
     }
     remindedRef.current.delete(current.id);
     snoozeUntilRef.current.set(current.id, Date.now() + minutes * 60000);
+    toast.success(`Напоминание отложено на ${SNOOZE_OPTIONS.find(o => o.value === minutes)?.label || `${minutes} мин`}`);
     dismiss();
   };
 
@@ -2159,6 +2161,7 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
     }
     remindedRef.current.delete(current.id);
     snoozeUntilRef.current.delete(current.id);
+    toast.success('Задача отменена');
     dismiss();
   };
 
