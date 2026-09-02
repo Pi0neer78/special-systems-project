@@ -64,26 +64,60 @@ interface AdminUser { id: number; login: string; full_name: string | null; }
 // COPY BUTTON
 // ══════════════════════════════════════════════════════════════════════════════
 
-async function launchAnyDesk(id: string, password: string) {
-  if (!id) { toast.error('Не заполнен ID1 для AnyDesk'); return; }
-  if (password) {
-    try { await navigator.clipboard.writeText(password); } catch { /* ignore */ }
+async function copyToClipboard(text: string): Promise<boolean> {
+  if (!text) return false;
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    throw new Error('clipboard API unavailable');
+  } catch {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.left = '-9999px';
+      ta.style.top = '0';
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
   }
-  window.location.href = `anydesk:${id}`;
-  toast.success(password ? 'AnyDesk запущен, пароль скопирован — вставьте Ctrl+V' : 'AnyDesk запущен');
 }
 
-function launchRMS(id: string, password: string) {
+async function launchAnyDesk(id: string, password: string) {
+  if (!id) { toast.error('Не заполнен ID1 для AnyDesk'); return; }
+  const copied = password ? await copyToClipboard(password) : false;
+  window.location.href = `anydesk:${id}`;
+  if (password && !copied) {
+    toast.error('AnyDesk запущен, но пароль скопировать не удалось — скопируйте вручную');
+  } else {
+    toast.success(copied ? 'AnyDesk запущен, пароль скопирован — вставьте Ctrl+V' : 'AnyDesk запущен');
+  }
+}
+
+async function launchRMS(id: string, password: string) {
   if (!id && !password) { toast.error('Не заполнены ID2/пароль для RMS'); return; }
   const text = [id, password].filter(Boolean).join('   ');
-  navigator.clipboard.writeText(text).catch(() => {});
-  toast.success('ID и пароль RMS скопированы — откройте RMS и вставьте в окно подключения');
+  const copied = await copyToClipboard(text);
+  if (copied) {
+    toast.success('ID и пароль RMS скопированы — откройте RMS и вставьте в окно подключения');
+  } else {
+    toast.error('Не удалось скопировать ID и пароль — скопируйте вручную');
+  }
 }
 
 function CopyBtn({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(value || '');
+  const copy = async () => {
+    const ok = await copyToClipboard(value || '');
+    if (!ok) { toast.error('Не удалось скопировать'); return; }
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
