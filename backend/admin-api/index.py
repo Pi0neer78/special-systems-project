@@ -5,6 +5,8 @@ import hmac
 import secrets
 import string
 import time
+import re
+import urllib.request
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
@@ -18,6 +20,7 @@ def generate_access_key() -> str:
 SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 't_p34673685_special_systems_proj')
 ADMIN_LOGIN = 'Pioneer78'
 SECRET_KEY = 'specsystems_admin_secret_2026'
+RS_RELEASES_URL = 'https://rial-soft.ru/products/version/data/releases.json'
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -64,6 +67,27 @@ def get_conn():
     return psycopg2.connect(os.environ['DATABASE_URL'])
 
 
+def version_tuple(v: str):
+    """'3.0.22' -> (3, 0, 22); нечисловые части и пустая строка дают (0,)."""
+    if not v:
+        return (0,)
+    parts = re.findall(r'\d+', v)
+    return tuple(int(p) for p in parts) if parts else (0,)
+
+
+def fetch_rs_releases() -> dict:
+    """Скачивает датасет актуальных версий 1С с rial-soft.ru. code -> {version, date}."""
+    req = urllib.request.Request(RS_RELEASES_URL, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req, timeout=8) as resp:
+        payload = json.loads(resp.read().decode('utf-8'))
+    result = {}
+    for cfg in payload.get('configs', []):
+        latest = next((r for r in cfg.get('releases', []) if r.get('status') == 'final'), None)
+        if latest:
+            result[cfg['code']] = {'version': latest['v'], 'date': latest.get('date')}
+    return result
+
+
 def handler(event: dict, context) -> dict:
     """CRUD API для административной панели: пользователи, клиенты, базы данных, привязки.
     Маршрутинг через query-параметры: ?resource=users|clients|databases|user_clients&id=N&sub=db&subid=M
@@ -94,7 +118,7 @@ def handler(event: dict, context) -> dict:
         caller_user_id = caller['user_id']
 
         # Пользователь (не админ) имеет доступ только к clients и databases
-        if not is_admin and resource not in ('clients', 'databases'):
+        if not is_admin and resource not in ('clients', 'databases', 'check-version', 'check-all-versions'):
             return err('Forbidden', 403)
         # ── USERS ──────────────────────────────────────────────────────────────
         if resource == 'users':
@@ -290,20 +314,76 @@ def handler(event: dict, context) -> dict:
                     return ok(cur.fetchall())
                 if method == 'POST':
                     cur.execute(f"""
-                        INSERT INTO {SCHEMA}.config_databases (config_name, min_platform_version, actual_config_version, update_release_date)
-                        VALUES (%s,%s,%s,%s) RETURNING *
-                    """, (body['config_name'], body.get('min_platform_version'), body.get('actual_config_version'), body.get('update_release_date') or None))
+                        INSERT INTO {SCHEMA}.config_databases (config_name, min_platform_version, actual_config_version, update_release_date, rs_code)
+                        VALUES (%s,%s,%s,%s,%s) RETURNING *
+                    """, (body['config_name'], body.get('min_platform_version'), body.get('actual_config_version'), body.get('update_release_date') or None, body.get('rs_code') or None))
                     conn.commit()
                     return ok(dict(cur.fetchone()))
             else:
                 if method == 'PUT':
                     cur.execute(f"""
                         UPDATE {SCHEMA}.config_databases SET
-                          config_name=%s, min_platform_version=%s, actual_config_version=%s, update_release_date=%s, updated_at=NOW()
+                          config_name=%s, min_platform_version=%s, actual_config_version=%s, update_release_date=%s, rs_code=%s, updated_at=NOW()
                         WHERE id=%s RETURNING *
-                    """, (body['config_name'], body.get('min_platform_version'), body.get('actual_config_version'), body.get('update_release_date') or None, rid))
+                    """, (body['config_name'], body.get('min_platform_version'), body.get('actual_config_version'), body.get('update_release_date') or None, body.get('rs_code') or None, rid))
                     conn.commit()
                     return ok(dict(cur.fetchone()))
+
+        # ── ПРОВЕРКА АКТУАЛЬНОЙ ВЕРСИИ ЧЕРЕЗ RIAL-SOFT.RU ────────────────────────
+        # GET ?resource=check-version&id=N        — проверить одну базу
+        #   Response: { id, config_name, current, latest, has_update, latest_date }
+        #   или { id, config_name, error: "..." } если rs_code не задан / нет данных
+        # GET ?resource=check-all-versions         — проверить все базы разом
+        #   Response: { checked: N, outdated: [ {id, config_name, current, latest, latest_date}, ... ], errors: [ {id, config_name, error}, ... ] }
+        if resource == 'check-version' and method == 'GET':
+            if not rid:
+                return err('Не указан id базы')
+            cur.execute(f"SELECT id, config_name, actual_config_version, rs_code FROM {SCHEMA}.config_databases WHERE id=%s", [rid])
+            row = cur.fetchone()
+            if not row:
+                return err('База не найдена', 404)
+            if not row['rs_code']:
+                return ok({'id': row['id'], 'config_name': row['config_name'], 'error': 'Для этой базы не указан код сопоставления (rs_code) — обновление вручную'})
+            try:
+                releases = fetch_rs_releases()
+            except Exception:
+                return err('Не удалось получить данные с rial-soft.ru, попробуйте позже', 502)
+            info = releases.get(row['rs_code'])
+            if not info:
+                return ok({'id': row['id'], 'config_name': row['config_name'], 'error': 'Конфигурация не найдена в источнике версий'})
+            has_update = version_tuple(info['version']) > version_tuple(row['actual_config_version'])
+            return ok({
+                'id': row['id'], 'config_name': row['config_name'],
+                'current': row['actual_config_version'] or None,
+                'latest': info['version'], 'latest_date': info['date'],
+                'has_update': has_update,
+            })
+
+        if resource == 'check-all-versions' and method == 'GET':
+            cur.execute(f"SELECT id, config_name, actual_config_version, rs_code FROM {SCHEMA}.config_databases ORDER BY config_name")
+            rows = cur.fetchall()
+            try:
+                releases = fetch_rs_releases()
+            except Exception:
+                return err('Не удалось получить данные с rial-soft.ru, попробуйте позже', 502)
+            outdated = []
+            errors = []
+            checked = 0
+            for row in rows:
+                if not row['rs_code']:
+                    continue
+                info = releases.get(row['rs_code'])
+                if not info:
+                    errors.append({'id': row['id'], 'config_name': row['config_name'], 'error': 'Не найдена в источнике версий'})
+                    continue
+                checked += 1
+                if version_tuple(info['version']) > version_tuple(row['actual_config_version']):
+                    outdated.append({
+                        'id': row['id'], 'config_name': row['config_name'],
+                        'current': row['actual_config_version'] or None,
+                        'latest': info['version'], 'latest_date': info['date'],
+                    })
+            return ok({'checked': checked, 'outdated': outdated, 'errors': errors})
 
         # ── USER ↔ CLIENT LINKS ────────────────────────────────────────────────
         # GET  ?resource=user_clients&id=USER_ID  → список клиентов пользователя

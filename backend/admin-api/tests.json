@@ -6,6 +6,20 @@
       "path": "/?resource=users",
       "expectedStatus": 401,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Check version without token returns 401",
+      "method": "GET",
+      "path": "/?resource=check-version&id=1",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Check all versions without token returns 401",
+      "method": "GET",
+      "path": "/?resource=check-all-versions",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
     }
   ]
 }

@@ -452,15 +452,33 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
 // DATABASES SECTION
 // ══════════════════════════════════════════════════════════════════════════════
 
-type ConfigDB = { id: number; config_name: string; min_platform_version: string; actual_config_version: string; update_release_date: string };
+type ConfigDB = { id: number; config_name: string; min_platform_version: string; actual_config_version: string; update_release_date: string; rs_code: string | null };
+
+const RS_CODE_OPTIONS = [
+  { value: 'Accounting', label: 'Бухгалтерия предприятия, ред. 3.0' },
+  { value: 'HRM', label: 'Зарплата и управление персоналом, ред. 3.1' },
+  { value: 'Trade', label: 'Управление торговлей, ред. 11' },
+  { value: 'SmallBusiness', label: 'Управление нашей фирмой, ред. 3.0' },
+  { value: 'Retail', label: 'Розница, ред. 3.0' },
+  { value: 'ComplexAutomation', label: 'Комплексная автоматизация, ред. 2.5' },
+  { value: 'ERP', label: '1С:ERP Управление предприятием, ред. 2.5' },
+  { value: 'DocFlow', label: 'Документооборот, ред. 3.0' },
+];
+
+type CheckResult = { id: number; config_name: string; current?: string | null; latest?: string; latest_date?: string; has_update?: boolean; error?: string };
 
 function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }) {
   const [dbs, setDbs] = useState<ConfigDB[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState<{ open: boolean; item?: ConfigDB }>({ open: false });
-  const [form, setForm] = useState({ config_name: '', min_platform_version: '', actual_config_version: '', update_release_date: '' });
+  const [form, setForm] = useState({ config_name: '', min_platform_version: '', actual_config_version: '', update_release_date: '', rs_code: '' });
   const [saving, setSaving] = useState(false);
+  const [checkingId, setCheckingId] = useState<number | null>(null);
+  const [checkModal, setCheckModal] = useState<CheckResult | null>(null);
+  const [applying, setApplying] = useState(false);
+  const [checkingAll, setCheckingAll] = useState(false);
+  const [allResultModal, setAllResultModal] = useState<{ checked: number; outdated: CheckResult[]; errors: CheckResult[] } | null>(null);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -476,12 +494,12 @@ function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }
   useEffect(() => { load(); }, [load]);
 
   const openAdd = () => {
-    setForm({ config_name: '', min_platform_version: '', actual_config_version: '', update_release_date: '' });
+    setForm({ config_name: '', min_platform_version: '', actual_config_version: '', update_release_date: '', rs_code: '' });
     setModal({ open: true });
   };
 
   const openEdit = (d: ConfigDB) => {
-    setForm({ config_name: d.config_name, min_platform_version: d.min_platform_version || '', actual_config_version: d.actual_config_version || '', update_release_date: d.update_release_date || '' });
+    setForm({ config_name: d.config_name, min_platform_version: d.min_platform_version || '', actual_config_version: d.actual_config_version || '', update_release_date: d.update_release_date || '', rs_code: d.rs_code || '' });
     setModal({ open: true, item: d });
   };
 
@@ -497,6 +515,42 @@ function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }
     load();
   };
 
+  const checkVersion = async (d: ConfigDB) => {
+    setCheckingId(d.id);
+    const res = await api(`resource=check-version&id=${d.id}`);
+    setCheckingId(null);
+    setCheckModal(res);
+  };
+
+  const applyUpdate = async () => {
+    if (!checkModal || !checkModal.latest) return;
+    const target = dbs.find(x => x.id === checkModal.id);
+    if (!target) return;
+    setApplying(true);
+    await api(`resource=databases&id=${target.id}`, 'PUT', {
+      config_name: target.config_name,
+      min_platform_version: target.min_platform_version,
+      actual_config_version: checkModal.latest,
+      update_release_date: checkModal.latest_date || target.update_release_date,
+      rs_code: target.rs_code,
+    });
+    setApplying(false);
+    setCheckModal(null);
+    load();
+    toast.success(`${target.config_name}: версия обновлена до ${checkModal.latest}`);
+  };
+
+  const checkAllVersions = async () => {
+    setCheckingAll(true);
+    const res = await api('resource=check-all-versions');
+    setCheckingAll(false);
+    if (res?.error) {
+      toast.error(res.error);
+      return;
+    }
+    setAllResultModal(res);
+  };
+
   const filteredDbs = dbs.filter(d =>
     !search || d.config_name.toLowerCase().includes(search.toLowerCase()) ||
     (d.actual_config_version || '').includes(search)
@@ -506,9 +560,15 @@ function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }
     <div>
       <div className="flex items-center justify-between mb-3">
         <h2 className="font-display text-xl uppercase">Базы данных (конфигурации)</h2>
-        <Button size="sm" onClick={openAdd} className="bg-primary text-primary-foreground hover:bg-primary/90 h-8">
-          <Icon name="Plus" size={15} className="mr-1" /> Добавить
-        </Button>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={checkAllVersions} disabled={checkingAll} className="border-border h-8">
+            {checkingAll ? <Icon name="Loader2" size={15} className="mr-1 animate-spin" /> : <Icon name="RefreshCw" size={15} className="mr-1" />}
+            Проверить все версии
+          </Button>
+          <Button size="sm" onClick={openAdd} className="bg-primary text-primary-foreground hover:bg-primary/90 h-8">
+            <Icon name="Plus" size={15} className="mr-1" /> Добавить
+          </Button>
+        </div>
       </div>
 
       <div className="relative mb-3">
@@ -537,9 +597,15 @@ function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }
                   <td className="px-3 py-2 font-mono text-xs">{d.actual_config_version || '—'}</td>
                   <td className="px-3 py-2 text-muted-foreground text-xs">{d.update_release_date || '—'}</td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => openEdit(d)} className="text-muted-foreground hover:text-primary transition-colors p-1">
-                      <Icon name="Pencil" size={14} />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button onClick={() => checkVersion(d)} disabled={checkingId === d.id}
+                        className="text-muted-foreground hover:text-primary transition-colors p-1" title="Проверить актуальную версию">
+                        {checkingId === d.id ? <Icon name="Loader2" size={14} className="animate-spin" /> : <Icon name="RefreshCw" size={14} />}
+                      </button>
+                      <button onClick={() => openEdit(d)} className="text-muted-foreground hover:text-primary transition-colors p-1">
+                        <Icon name="Pencil" size={14} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -565,8 +631,17 @@ function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }
             <Field label="Актуальная версия" half>
               <Input value={form.actual_config_version} onChange={e => setForm(f => ({ ...f, actual_config_version: e.target.value }))} className={inputCls} placeholder="3.0.71" />
             </Field>
-            <Field label="Дата выхода обновления">
+            <Field label="Дата выхода обновления" half>
               <Input type="date" value={form.update_release_date} onChange={e => setForm(f => ({ ...f, update_release_date: e.target.value }))} className={inputCls} />
+            </Field>
+            <Field label="Код для автопроверки версии" half>
+              <Select value={form.rs_code || 'none'} onValueChange={v => setForm(f => ({ ...f, rs_code: v === 'none' ? '' : v }))}>
+                <SelectTrigger className={inputCls}><SelectValue placeholder="Не задан" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Не задан</SelectItem>
+                  {RS_CODE_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </Field>
           </div>
           <DialogFooter>
@@ -574,6 +649,93 @@ function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }
             <Button onClick={save} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
               {saving ? 'Сохранение...' : 'Сохранить'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Результат проверки одной базы */}
+      <Dialog open={!!checkModal} onOpenChange={o => !o && setCheckModal(null)}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase">{checkModal?.config_name}</DialogTitle>
+          </DialogHeader>
+          {checkModal?.error ? (
+            <p className="text-sm text-muted-foreground">{checkModal.error}</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="rounded-lg bg-secondary/40 p-3">
+                  <div className="text-xs text-muted-foreground mb-1">Текущая версия</div>
+                  <div className="font-mono text-sm">{checkModal?.current || '—'}</div>
+                </div>
+                <div className="rounded-lg bg-secondary/40 p-3">
+                  <div className="text-xs text-muted-foreground mb-1">Новая версия</div>
+                  <div className={`font-mono text-sm ${checkModal?.has_update ? 'text-primary font-semibold' : ''}`}>{checkModal?.latest}</div>
+                </div>
+              </div>
+              {checkModal?.has_update ? (
+                <p className="text-sm">Доступно обновление. Применить новую версию?</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">Установлена актуальная версия, обновление не требуется.</p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            {checkModal?.has_update ? (
+              <>
+                <Button variant="outline" onClick={() => setCheckModal(null)} className="border-border">Нет</Button>
+                <Button onClick={applyUpdate} disabled={applying} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                  {applying ? 'Применение...' : 'Да, применить'}
+                </Button>
+              </>
+            ) : (
+              <Button variant="outline" onClick={() => setCheckModal(null)} className="border-border">Закрыть</Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Результат проверки всех баз */}
+      <Dialog open={!!allResultModal} onOpenChange={o => !o && setAllResultModal(null)}>
+        <DialogContent className="bg-card border-border max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase">Результат проверки версий</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 max-h-[60vh] overflow-y-auto">
+            {allResultModal && allResultModal.outdated.length === 0 && (
+              <p className="text-sm text-muted-foreground">Все базы обновлены до актуальных версий.</p>
+            )}
+            {allResultModal && allResultModal.outdated.length > 0 && (
+              <div>
+                <p className="text-sm mb-2">Найдены обновления для {allResultModal.outdated.length} баз:</p>
+                <div className="space-y-2">
+                  {allResultModal.outdated.map(o => (
+                    <div key={o.id} className="rounded-lg bg-secondary/40 p-3 flex items-center justify-between gap-2">
+                      <div>
+                        <div className="text-sm font-medium">{o.config_name}</div>
+                        <div className="text-xs text-muted-foreground font-mono">{o.current || '—'} → <span className="text-primary">{o.latest}</span></div>
+                      </div>
+                      <Button size="sm" variant="outline" className="border-border h-7 shrink-0" onClick={() => { setAllResultModal(null); setCheckModal({ ...o, has_update: true }); }}>
+                        Применить
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {allResultModal && allResultModal.errors.length > 0 && (
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">Не удалось проверить:</p>
+                <div className="space-y-1">
+                  {allResultModal.errors.map(e => (
+                    <div key={e.id} className="text-xs text-muted-foreground">{e.config_name} — {e.error}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAllResultModal(null)} className="border-border">Закрыть</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
