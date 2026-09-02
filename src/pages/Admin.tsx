@@ -810,6 +810,13 @@ function ClientPrintView({ client }: { client: Client }) {
   .badge.active{background:#dcfce7;color:#166534}
   .badge.blocked{background:#fee2e2;color:#991b1b}
   .badge.inn{background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd}
+  /* Personal cabinet notice */
+  .cabinet-notice{background:#0f172a;border-radius:10px;padding:16px 20px;margin-bottom:20px;text-align:center}
+  .cabinet-notice .login-row{display:flex;justify-content:center;gap:32px;margin-bottom:10px}
+  .cabinet-notice .login-row .field label{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:2px}
+  .cabinet-notice .login-row .field span{font-size:18px;color:#fff;font-weight:700;font-family:'Oswald',sans-serif;letter-spacing:0.5px}
+  .cabinet-notice .cta{font-size:15px;font-weight:600;color:#fff;line-height:1.4}
+  .cabinet-notice .cta a{color:#60a5fa;font-weight:700;text-decoration:none}
   /* Sections */
   .section{margin-bottom:16px}
   .section-title{font-family:'Oswald',sans-serif;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:2px;color:#2563eb;border-bottom:1px solid #e2e8f0;padding-bottom:5px;margin-bottom:10px}
@@ -858,6 +865,13 @@ function ClientPrintView({ client }: { client: Client }) {
     <span class="badge ${client.is_active ? 'active' : 'blocked'}">${client.is_active ? '● Активен' : '● Заблокирован'}</span>
     ${client.inn ? `<span class="badge inn">ИНН: ${client.inn}</span>` : ''}
   </div>
+</div>
+
+<div class="cabinet-notice">
+  <div class="login-row">
+    <div class="field"><label style="color:#94a3b8">Логин</label><span>${v(client.login)}</span></div>
+  </div>
+  <div class="cta">Для доступа к личному кабинету перейдите на сайт <a href="https://ssys.su">https://ssys.su</a></div>
 </div>
 
 <div class="section">
