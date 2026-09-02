@@ -64,9 +64,11 @@ interface AdminUser { id: number; login: string; full_name: string | null; }
 // COPY BUTTON
 // ══════════════════════════════════════════════════════════════════════════════
 
-function launchAnyDesk(id: string, password: string) {
+async function launchAnyDesk(id: string, password: string) {
   if (!id) { toast.error('Не заполнен ID1 для AnyDesk'); return; }
-  if (password) navigator.clipboard.writeText(password).catch(() => {});
+  if (password) {
+    try { await navigator.clipboard.writeText(password); } catch { /* ignore */ }
+  }
   window.location.href = `anydesk:${id}`;
   toast.success(password ? 'AnyDesk запущен, пароль скопирован — вставьте Ctrl+V' : 'AnyDesk запущен');
 }
