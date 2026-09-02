@@ -2057,6 +2057,7 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
   const [queue, setQueue] = useState<Task[]>([]);
   const [snoozing, setSnoozing] = useState(false);
   const remindedRef = useRef<Map<number, string>>(new Map());
+  const snoozeUntilRef = useRef<Map<number, number>>(new Map());
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -2075,6 +2076,8 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
       const due: Task[] = data.filter((t: Task) => {
         const relevant = t.assignee_id === userId || t.watchers.some(w => w.id === userId);
         if (!relevant) return false;
+        const suppressUntil = snoozeUntilRef.current.get(t.id) || 0;
+        if (now < suppressUntil) return false;
         const ts = dueTimestamp(t);
         if (ts === null) return false;
         const key = `${t.due_date}_${t.due_time || ''}`;
@@ -2105,12 +2108,18 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
   const complete = async () => {
     if (!current) return;
     setSnoozing(true);
-    await fetch(`${TASKS_URL}?resource=tasks&id=${current.id}`, {
+    const res = await fetch(`${TASKS_URL}?resource=tasks&id=${current.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
       body: JSON.stringify({ status: 'done' }),
-    });
+    }).catch(() => null);
     setSnoozing(false);
+    if (!res || !res.ok) {
+      toast.error('Не удалось отметить задачу выполненной');
+      return;
+    }
+    remindedRef.current.delete(current.id);
+    snoozeUntilRef.current.delete(current.id);
     dismiss();
   };
 
@@ -2120,13 +2129,36 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
     const newDue = new Date(Date.now() + minutes * 60000);
     const due_date = newDue.toISOString().slice(0, 10);
     const due_time = newDue.toTimeString().slice(0, 8);
-    await fetch(`${TASKS_URL}?resource=tasks&id=${current.id}`, {
+    const res = await fetch(`${TASKS_URL}?resource=tasks&id=${current.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
       body: JSON.stringify({ due_date, due_time, all_day: false }),
-    });
-    remindedRef.current.delete(current.id);
+    }).catch(() => null);
     setSnoozing(false);
+    if (!res || !res.ok) {
+      toast.error('Не удалось отложить напоминание');
+      return;
+    }
+    remindedRef.current.delete(current.id);
+    snoozeUntilRef.current.set(current.id, Date.now() + minutes * 60000);
+    dismiss();
+  };
+
+  const cancelTask = async () => {
+    if (!current) return;
+    setSnoozing(true);
+    const res = await fetch(`${TASKS_URL}?resource=tasks&id=${current.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({ status: 'cancelled' }),
+    }).catch(() => null);
+    setSnoozing(false);
+    if (!res || !res.ok) {
+      toast.error('Не удалось отменить задачу');
+      return;
+    }
+    remindedRef.current.delete(current.id);
+    snoozeUntilRef.current.delete(current.id);
     dismiss();
   };
 
@@ -2176,6 +2208,15 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
                 </button>
               ))}
             </div>
+          </div>
+          <div className="flex gap-1.5">
+            <Button disabled={snoozing} variant="outline" onClick={dismiss} className="flex-1 border-border">
+              Закрыть
+            </Button>
+            <Button disabled={snoozing} variant="outline" onClick={cancelTask}
+              className="flex-1 border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive">
+              <Icon name="X" size={14} className="mr-1.5" /> Отменить задачу
+            </Button>
           </div>
         </div>
       </DialogContent>
