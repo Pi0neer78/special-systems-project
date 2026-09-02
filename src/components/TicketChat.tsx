@@ -141,7 +141,7 @@ export default function TicketChat({
         <span className="text-xs font-medium text-muted-foreground">Переписка</span>
       </div>
 
-      <div className={`flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-[180px] max-h-[320px] relative ${dragOver ? 'bg-primary/5' : ''}`}>
+      <div className={`flex-1 overflow-y-auto px-3 py-3 space-y-3 min-h-[360px] max-h-[520px] relative ${dragOver ? 'bg-primary/5' : ''}`}>
         {dragOver && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-primary/10 border-2 border-dashed border-primary rounded-md pointer-events-none">
             <span className="text-xs font-medium text-primary">Отпустите файл, чтобы прикрепить</span>
