@@ -829,6 +829,8 @@ function UpdatesSection() {
   const [upForm, setUpForm] = useState({ user_id: '', version: '', date: new Date().toISOString().slice(0, 10), info: '' });
   const [saving, setSaving] = useState(false);
   const [expandedClients, setExpandedClients] = useState<Set<number>>(new Set());
+  const [filterDb, setFilterDb] = useState('');
+  const [onlyOutdated, setOnlyOutdated] = useState(false);
 
   const toggleClient = (clientId: number) =>
     setExpandedClients(prev => {
@@ -842,6 +844,13 @@ function UpdatesSection() {
     load();
     api('resource=users').then(d => { if (Array.isArray(d)) setUsers(d); });
   }, []);
+
+  const dbNames = [...new Set(rows.map(r => r.config_name))].sort();
+  const outdatedCount = rows.filter(r => versionGt(r.actual_config_version, r.current_config_version)).length;
+  const filterActive = !!filterDb || onlyOutdated;
+  const matchesFilter = (r: UpdateRow) =>
+    (!filterDb || r.config_name === filterDb) &&
+    (!onlyOutdated || versionGt(r.actual_config_version, r.current_config_version));
 
   const openHistory = async (row: UpdateRow) => {
     const h = await api(`resource=history&client_db_id=${row.client_db_id}`);
@@ -871,7 +880,27 @@ function UpdatesSection() {
   };
 
   return (
-    <div className="overflow-auto">
+    <div>
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <select value={filterDb} onChange={e => setFilterDb(e.target.value)}
+          className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+          <option value="">Все базы данных</option>
+          {dbNames.map(n => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <button onClick={() => setOnlyOutdated(v => !v)}
+          className={`h-8 px-3 rounded-md border text-xs font-medium flex items-center gap-1.5 transition-colors ${onlyOutdated ? 'bg-yellow-500/15 text-yellow-400 border-yellow-500/40' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary'}`}>
+          <Icon name="AlertTriangle" size={12} />
+          Требуют обновления
+          {outdatedCount > 0 && <span className="text-[10px] bg-black/20 rounded px-1.5 py-0.5">{outdatedCount}</span>}
+        </button>
+        {filterActive && (
+          <button onClick={() => { setFilterDb(''); setOnlyOutdated(false); }}
+            className="h-8 px-2.5 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+            Сбросить фильтр
+          </button>
+        )}
+      </div>
+      <div className="overflow-auto">
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="border-b border-border">
@@ -948,11 +977,26 @@ function UpdatesSection() {
               );
             };
 
-            const renderClient = (clientId: number, depth: number): React.ReactNode[] => {
+            // Есть ли хоть одна подходящая под фильтр база в поддереве клиента
+            const matchCache = new Map<number, boolean>();
+            const hasMatchDeep = (clientId: number): boolean => {
+              if (matchCache.has(clientId)) return matchCache.get(clientId)!;
               const dbs = dbsByClient.get(clientId) ?? [];
               const childIds = childIdsByParent.get(clientId) ?? [];
+              const result = dbs.some(matchesFilter) || childIds.some(hasMatchDeep);
+              matchCache.set(clientId, result);
+              return result;
+            };
+
+            const renderClient = (clientId: number, depth: number): React.ReactNode[] => {
+              if (filterActive && !hasMatchDeep(clientId)) return [];
+
+              const allDbs = dbsByClient.get(clientId) ?? [];
+              const dbs = filterActive ? allDbs.filter(matchesFilter) : allDbs;
+              const allChildIds = childIdsByParent.get(clientId) ?? [];
+              const childIds = filterActive ? allChildIds.filter(hasMatchDeep) : allChildIds;
               const hasContent = dbs.length > 0 || childIds.length > 0;
-              const isExpanded = expandedClients.has(clientId);
+              const isExpanded = filterActive ? true : expandedClients.has(clientId);
               const name = clientNameById.get(clientId) ?? '';
               const totalCount = dbs.length + childIds.length;
               const out: React.ReactNode[] = [];
@@ -962,7 +1006,7 @@ function UpdatesSection() {
                   <td className="py-2.5" style={{ paddingLeft: `${12 + depth * 20}px` }} colSpan={2}>
                     <span className="flex items-center gap-1">
                       {hasContent ? (
-                        <button onClick={() => toggleClient(clientId)} className="flex items-center justify-center w-5 h-5 rounded hover:bg-secondary/60 shrink-0 transition-colors">
+                        <button onClick={() => toggleClient(clientId)} disabled={filterActive} className="flex items-center justify-center w-5 h-5 rounded hover:bg-secondary/60 shrink-0 transition-colors disabled:opacity-60">
                           <Icon name={isExpanded ? 'ChevronDown' : 'ChevronRight'} size={13} className="text-muted-foreground" />
                         </button>
                       ) : (
@@ -989,10 +1033,15 @@ function UpdatesSection() {
               return out;
             };
 
-            return topClientIds.flatMap(id => renderClient(id, 0));
+            const rendered = topClientIds.flatMap(id => renderClient(id, 0));
+            if (rendered.length === 0) {
+              return <tr><td colSpan={7} className="px-3 py-10 text-center text-muted-foreground text-sm">Ничего не найдено по заданному фильтру</td></tr>;
+            }
+            return rendered;
           })()}
         </tbody>
       </table>
+      </div>
 
       {/* Модалка обновления */}
       <Dialog open={!!updateModal} onOpenChange={() => setUpdateModal(null)}>
