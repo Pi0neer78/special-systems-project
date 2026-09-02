@@ -417,11 +417,15 @@ function CredentialsSection() {
     }
     setDirty(false);
     if (selectedFolder !== null) loadCreds(selectedFolder);
+    toast.success('Данные сохранены');
   };
+
+  const [confirmCancel, setConfirmCancel] = useState(false);
 
   const cancel = () => {
     if (selectedCred) selectCred(selectedCred);
     else { setForm(EMPTY_CRED); setDirty(false); }
+    setConfirmCancel(false);
   };
 
   const [confirmDeleteCred, setConfirmDeleteCred] = useState<Credential | null>(null);
@@ -434,6 +438,7 @@ function CredentialsSection() {
     setDeletingCred(false);
     setConfirmDeleteCred(null);
     if (selectedFolder !== null) loadCreds(selectedFolder);
+    toast.success('Данные удалены');
   };
 
   const ff = (field: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -666,7 +671,7 @@ function CredentialsSection() {
                     <Button onClick={save} className="bg-primary text-primary-foreground hover:bg-primary/90">
                       <Icon name="Save" size={15} className="mr-2" /> Сохранить
                     </Button>
-                    <Button variant="outline" onClick={cancel} className="border-border">
+                    <Button variant="outline" onClick={() => setConfirmCancel(true)} className="border-border">
                       <Icon name="X" size={15} className="mr-2" /> Отменить
                     </Button>
                     {selectedCred && (
@@ -758,21 +763,39 @@ function CredentialsSection() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={confirmCancel} onOpenChange={setConfirmCancel}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icon name="TriangleAlert" size={17} className="text-destructive" />
+              Отменить изменения?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Несохранённые изменения будут потеряны.
+          </p>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" onClick={() => setConfirmCancel(false)}>Нет</Button>
+            <Button onClick={cancel} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Да</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!confirmDeleteCred} onOpenChange={() => setConfirmDeleteCred(null)}>
         <DialogContent className="bg-card border-border max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Icon name="TriangleAlert" size={17} className="text-destructive" />
-              Удалить запись?
+              Удалить данные «{confirmDeleteCred?.name || '(без названия)'}»?
             </DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Запись «{confirmDeleteCred?.name || '(без названия)'}» и все прикреплённые к ней файлы будут удалены без возможности восстановления.
+            Запись и все прикреплённые к ней файлы будут удалены без возможности восстановления.
           </p>
           <div className="flex gap-2 justify-end mt-2">
-            <Button variant="outline" onClick={() => setConfirmDeleteCred(null)}>Отмена</Button>
+            <Button variant="outline" onClick={() => setConfirmDeleteCred(null)}>Нет</Button>
             <Button disabled={deletingCred} onClick={doDeleteCred} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-              {deletingCred ? 'Удаление...' : 'Удалить'}
+              {deletingCred ? 'Удаление...' : 'Да'}
             </Button>
           </div>
         </DialogContent>
