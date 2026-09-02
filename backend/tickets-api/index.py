@@ -50,6 +50,17 @@ def cdn_url(key: str) -> str:
     return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
 
 
+def delete_s3_object(file_url: str):
+    prefix = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/"
+    if not file_url or not file_url.startswith(prefix):
+        return
+    key = file_url[len(prefix):]
+    try:
+        get_s3().delete_object(Bucket=S3_BUCKET, Key=key)
+    except Exception:
+        pass
+
+
 # ── Клиентский токен ─────────────────────────────────────────────────────────
 
 def make_client_token(client_id: int, login: str) -> str:
@@ -480,6 +491,10 @@ def handler(event: dict, context) -> dict:
                 cur.close()
                 conn.close()
                 return resp(403, {'error': 'Удалять заявки может только администратор'})
+            cur.execute(f"SELECT file_url FROM {SCHEMA}.ticket_messages WHERE ticket_id = %s AND file_url IS NOT NULL", (ticket_id,))
+            for r in cur.fetchall():
+                delete_s3_object(r['file_url'])
+            cur.execute(f"DELETE FROM {SCHEMA}.ticket_messages WHERE ticket_id = %s", (ticket_id,))
             cur.execute(f"DELETE FROM {SCHEMA}.tickets WHERE id = %s RETURNING id", (ticket_id,))
             row = cur.fetchone()
             conn.commit()
