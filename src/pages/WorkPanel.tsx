@@ -127,7 +127,7 @@ function launchRMS(id: string, password: string) {
 async function launchRuDesktop(id: string, password: string) {
   if (!id) { toast.error('Не заполнен ID3 для RuDesktop'); return; }
   const copied = password ? await copyToClipboard(password) : false;
-  window.location.href = `rudesktop://connection/new/${id}`;
+  window.location.href = `rudesktop://${id}`;
   if (password && !copied) {
     toast.error('RuDesktop запущен, но пароль скопировать не удалось — скопируйте вручную');
   } else {
