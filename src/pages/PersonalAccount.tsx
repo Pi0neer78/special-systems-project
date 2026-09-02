@@ -190,7 +190,7 @@ const STATUS_FILTERS = [
   { value: 'cancelled', label: 'Отменённые' },
 ];
 
-function TicketsPanel({ token, onNewClick }: { token: string; onNewClick: () => void }) {
+function TicketsPanel({ token, onNewClick, refreshSignal }: { token: string; onNewClick: () => void; refreshSignal: number }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('');
@@ -203,7 +203,7 @@ function TicketsPanel({ token, onNewClick }: { token: string; onNewClick: () => 
     if (Array.isArray(data)) setTickets(data);
   }, [token]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, refreshSignal]);
 
   const filtered = filterStatus ? tickets.filter(t => t.status === filterStatus) : tickets;
 
@@ -387,6 +387,7 @@ export default function PersonalAccount() {
   const [clientInfo, setClientInfo] = useState<ClientInfo | null>(null);
   const [token, setToken] = useState('');
   const [showNew, setShowNew] = useState(false);
+  const [ticketsRefresh, setTicketsRefresh] = useState(0);
   const navigate = useNavigate();
 
   // Сплит-панель
@@ -480,7 +481,7 @@ export default function PersonalAccount() {
       <div ref={containerRef} className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 56px)' }}>
         {/* Левая панель — заявки */}
         <div className="flex flex-col overflow-hidden border-r border-border" style={{ width: `${splitWidth}%` }}>
-          <TicketsPanel token={token} onNewClick={() => setShowNew(true)} />
+          <TicketsPanel token={token} onNewClick={() => setShowNew(true)} refreshSignal={ticketsRefresh} />
         </div>
 
         {/* Разделитель */}
@@ -504,7 +505,7 @@ export default function PersonalAccount() {
           <DialogHeader>
             <DialogTitle className="font-display uppercase tracking-wide">Новая заявка</DialogTitle>
           </DialogHeader>
-          <NewTicketForm token={token} onCreated={() => {}} onClose={() => setShowNew(false)} />
+          <NewTicketForm token={token} onCreated={() => setTicketsRefresh(n => n + 1)} onClose={() => setShowNew(false)} />
         </DialogContent>
       </Dialog>
     </div>
