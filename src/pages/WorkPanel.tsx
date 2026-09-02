@@ -815,8 +815,8 @@ function versionGt(a: string | null, b: string | null): boolean {
   const pb = b.split('.').map(Number);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const na = pa[i] ?? 0, nb = pb[i] ?? 0;
-    if (nb > na) return true;
-    if (nb < na) return false;
+    if (na > nb) return true;
+    if (na < nb) return false;
   }
   return false;
 }
