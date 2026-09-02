@@ -26,7 +26,15 @@ function api(qs: string, method = 'GET', body?: object) {
     method,
     headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
     body: body ? JSON.stringify(body) : undefined,
-  }).then(r => r.json());
+  }).then(async r => {
+    if (r.status === 401) {
+      localStorage.removeItem(TOKEN_KEY);
+      toast.error('Сессия истекла, войдите заново');
+      window.location.reload();
+      return { error: 'Сессия истекла' };
+    }
+    return r.json();
+  });
 }
 
 function Spinner() {
