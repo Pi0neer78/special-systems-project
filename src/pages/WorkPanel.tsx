@@ -102,15 +102,26 @@ async function launchAnyDesk(id: string, password: string) {
   }
 }
 
-async function launchRMS(id: string, password: string) {
-  if (!id && !password) { toast.error('Не заполнены ID2/пароль для RMS'); return; }
-  const text = [id, password].filter(Boolean).join('   ');
-  const copied = await copyToClipboard(text);
-  if (copied) {
-    toast.success('ID и пароль RMS скопированы — откройте RMS и вставьте в окно подключения');
-  } else {
-    toast.error('Не удалось скопировать ID и пароль — скопируйте вручную');
-  }
+function rmsQuote(v: string) {
+  return v.includes(' ') ? `"${v}"` : v;
+}
+
+function toHex(str: string) {
+  return Array.from(new TextEncoder().encode(str)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function launchRMS(id: string, password: string) {
+  if (!id) { toast.error('Не заполнен ID2 для RMS'); return; }
+  const lines = [
+    '-create',
+    `-name:${rmsQuote('Быстрое подключение')}`,
+    `-host:${id}`,
+  ];
+  if (password) lines.push(`-password:${rmsQuote(password)}`, '-savepassword');
+  lines.push('-fullcontrol');
+  const uri = `rms:${toHex(lines.join('\r\n'))}`;
+  window.location.href = uri;
+  toast.success('RMS запущен с подключением к ' + id);
 }
 
 function CopyBtn({ value }: { value: string }) {
@@ -615,7 +626,7 @@ function CredentialsSection() {
                           <button
                             type="button"
                             onClick={() => n === 1 ? launchAnyDesk(form.login1, form.password1) : launchRMS(form.login2, form.password2)}
-                            title={n === 1 ? 'Запустить AnyDesk с этим ID' : 'Скопировать ID и пароль для RMS'}
+                            title={n === 1 ? 'Запустить AnyDesk с этим ID' : 'Запустить RMS с этим ID и паролем'}
                             className="w-5 h-5 shrink-0 rounded hover:scale-110 transition-transform"
                           >
                             <img src={icon} alt={app} className="w-5 h-5 rounded" />
