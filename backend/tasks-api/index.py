@@ -73,6 +73,19 @@ def fetch_watchers(cur, task_ids):
     return result
 
 
+def has_task_access(cur, task_id, caller) -> bool:
+    """Проверяет, имеет ли пользователь (не админ) доступ к задаче: автор, исполнитель или наблюдатель."""
+    if caller['role'] == 'admin':
+        return True
+    cur.execute(f"""
+        SELECT 1 FROM {SCHEMA}.tasks
+        WHERE id = %s AND (author_id = %s OR assignee_id = %s)
+        UNION
+        SELECT 1 FROM {SCHEMA}.task_watchers WHERE task_id = %s AND user_id = %s
+    """, (task_id, caller['user_id'], caller['user_id'], task_id, caller['user_id']))
+    return cur.fetchone() is not None
+
+
 def user_public(uid, users_by_id):
     if not uid:
         return None
@@ -130,6 +143,11 @@ def handler(event: dict, context) -> dict:
             if not rid:
                 if method == 'GET':
                     where, params = [], []
+                    if caller['role'] != 'admin':
+                        where.append(f"""(t.author_id = %s OR t.assignee_id = %s OR t.id IN (
+                            SELECT task_id FROM {SCHEMA}.task_watchers WHERE user_id = %s
+                        ))""")
+                        params.extend([caller['user_id'], caller['user_id'], caller['user_id']])
                     status_f = qs.get('status', '')
                     if status_f:
                         vals = status_f.split(',')
@@ -211,6 +229,9 @@ def handler(event: dict, context) -> dict:
                     watchers = fetch_watchers(cur, [new_id])
                     return ok(task_row_to_dict(row, watchers.get(new_id, [])))
             else:
+                if not has_task_access(cur, int(rid), caller):
+                    return err('Forbidden', 403)
+
                 if method == 'GET':
                     cur.execute(f"{TASK_SELECT} WHERE t.id = %s", [rid])
                     row = cur.fetchone()
