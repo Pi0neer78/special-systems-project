@@ -314,7 +314,14 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
                 <>
                   <tr key={u.id} className="border-t border-border hover:bg-secondary/30 transition-colors">
                     <td className="px-3 py-2">
-                      <div className="font-medium text-sm">{u.full_name || <span className="text-muted-foreground italic">—</span>}</div>
+                      <div className="font-medium text-sm flex items-center gap-1.5">
+                        {u.full_name || <span className="text-muted-foreground italic">—</span>}
+                        {!u.has_key && (
+                          <span title="Ключ доступа не сформирован — пользователь не сможет войти в рабочую панель">
+                            <Icon name="TriangleAlert" size={13} className="text-amber-500" />
+                          </span>
+                        )}
+                      </div>
                       <div className="font-mono text-xs text-muted-foreground">{u.login}</div>
                     </td>
                     <td className="px-3 py-2 text-muted-foreground text-xs">{u.phone || '—'}</td>
