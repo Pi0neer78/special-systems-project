@@ -920,6 +920,8 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
   const [saving, setSaving] = useState(false);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [ctab, setCtab] = useState<'general' | 'contacts' | 'databases'>('general');
+  const [confirmDelete, setConfirmDelete] = useState<Client | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -986,6 +988,20 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
 
   const toggleActive = async (c: Client) => {
     await api(`resource=clients&id=${c.id}`, 'PATCH');
+    load();
+  };
+
+  const deleteClient = async () => {
+    if (!confirmDelete) return;
+    setDeleting(true);
+    const res = await api(`resource=clients&id=${confirmDelete.id}`, 'DELETE');
+    setDeleting(false);
+    if (res?.error) {
+      toast.error(res.error);
+      return;
+    }
+    setConfirmDelete(null);
+    setModal({ open: false });
     load();
   };
 
@@ -1061,6 +1077,9 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
             <ClientPrintView client={c} />
             <button onClick={() => openEdit(c)} className="text-muted-foreground hover:text-primary transition-colors p-1">
               <Icon name="Pencil" size={14} />
+            </button>
+            <button onClick={() => setConfirmDelete(c)} className="text-muted-foreground hover:text-destructive transition-colors p-1">
+              <Icon name="Trash2" size={14} />
             </button>
           </div>
         </td>
@@ -1253,6 +1272,12 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
               </div>
 
               <DialogFooter className="px-6 pb-5 pt-2 border-t border-border">
+                {modal.item && (
+                  <Button variant="outline" onClick={() => setConfirmDelete(modal.item!)}
+                    className="border-destructive/30 text-destructive hover:bg-destructive/10 mr-auto">
+                    <Icon name="Trash2" size={14} className="mr-1.5" /> Удалить
+                  </Button>
+                )}
                 <Button variant="outline" onClick={() => setModal({ open: false })} className="border-border">Отмена</Button>
                 <Button onClick={save} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
                   {saving ? 'Сохранение...' : 'Сохранить'}
@@ -1262,6 +1287,26 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
           </Dialog>
         );
       })()}
+
+      <Dialog open={!!confirmDelete} onOpenChange={o => !o && setConfirmDelete(null)}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Icon name="TriangleAlert" size={17} className="text-destructive" />
+              Удалить клиента?
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Клиент «{confirmDelete?.name}» и все его данные (базы, заявки, история обновлений, доступ пользователей) будут удалены без возможности восстановления.
+          </p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmDelete(null)} className="border-border">Отмена</Button>
+            <Button disabled={deleting} onClick={deleteClient} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {deleting ? 'Удаление...' : 'Удалить'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

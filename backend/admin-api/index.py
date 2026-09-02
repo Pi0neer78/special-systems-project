@@ -24,7 +24,7 @@ RS_RELEASES_URL = 'https://rial-soft.ru/products/version/data/releases.json'
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, X-Admin-Token',
 }
 
@@ -306,6 +306,21 @@ def handler(event: dict, context) -> dict:
                         conn.commit()
                         return ok(dict(cur.fetchone()))
 
+                    if method == 'DELETE':
+                        cur.execute(f"SELECT id FROM {SCHEMA}.clients WHERE parent_id=%s LIMIT 1", [rid])
+                        if cur.fetchone():
+                            return err('У клиента есть дочерние организации — сначала удалите их или перепривяжите к другому клиенту', 409)
+                        cur.execute(f"DELETE FROM {SCHEMA}.update_history WHERE client_id=%s", [rid])
+                        cur.execute(f"DELETE FROM {SCHEMA}.client_databases WHERE client_id=%s", [rid])
+                        cur.execute(f"DELETE FROM {SCHEMA}.tickets WHERE client_id=%s", [rid])
+                        cur.execute(f"DELETE FROM {SCHEMA}.user_clients WHERE client_id=%s", [rid])
+                        cur.execute(f"DELETE FROM {SCHEMA}.clients WHERE id=%s RETURNING id", [rid])
+                        row = cur.fetchone()
+                        if not row:
+                            return err('Клиент не найден', 404)
+                        conn.commit()
+                        return ok({'deleted': row['id']})
+
         # ── CONFIG DATABASES ───────────────────────────────────────────────────
         if resource == 'databases':
             if not rid:
@@ -352,6 +367,9 @@ def handler(event: dict, context) -> dict:
             if not info:
                 return ok({'id': row['id'], 'config_name': row['config_name'], 'error': 'Конфигурация не найдена в источнике версий'})
             has_update = version_tuple(info['version']) > version_tuple(row['actual_config_version'])
+            if info.get('date'):
+                cur.execute(f"UPDATE {SCHEMA}.config_databases SET update_release_date=%s, updated_at=NOW() WHERE id=%s", (info['date'], row['id']))
+                conn.commit()
             return ok({
                 'id': row['id'], 'config_name': row['config_name'],
                 'current': row['actual_config_version'] or None,
@@ -377,12 +395,15 @@ def handler(event: dict, context) -> dict:
                     errors.append({'id': row['id'], 'config_name': row['config_name'], 'error': 'Не найдена в источнике версий'})
                     continue
                 checked += 1
+                if info.get('date'):
+                    cur.execute(f"UPDATE {SCHEMA}.config_databases SET update_release_date=%s, updated_at=NOW() WHERE id=%s", (info['date'], row['id']))
                 if version_tuple(info['version']) > version_tuple(row['actual_config_version']):
                     outdated.append({
                         'id': row['id'], 'config_name': row['config_name'],
                         'current': row['actual_config_version'] or None,
                         'latest': info['version'], 'latest_date': info['date'],
                     })
+            conn.commit()
             return ok({'checked': checked, 'outdated': outdated, 'errors': errors})
 
         # ── USER ↔ CLIENT LINKS ────────────────────────────────────────────────
