@@ -1,0 +1,1 @@
+ALTER TABLE t_p34673685_special_systems_proj.clients ADD COLUMN IF NOT EXISTS password_plain text NULL;

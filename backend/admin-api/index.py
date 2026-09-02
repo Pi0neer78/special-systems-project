@@ -206,7 +206,7 @@ def handler(event: dict, context) -> dict:
                     else:
                         cur.execute(f"""
                             SELECT c.id, c.parent_id, p.name as parent_name,
-                                   c.name, c.login, c.is_active, c.inn, c.address,
+                                   c.name, c.login, c.password_plain, c.is_active, c.inn, c.address,
                                    c.director_name, c.director_phone, c.director_email,
                                    c.accountant_name, c.accountant_phone, c.accountant_email,
                                    c.contact_name, c.contact_phone, c.contact_email
@@ -240,16 +240,17 @@ def handler(event: dict, context) -> dict:
 
                 if method == 'POST':
                     pwd_hash = hash_password(body['password']) if body.get('password') else None
+                    pwd_plain = body.get('password') or None
                     cur.execute(f"""
                         INSERT INTO {SCHEMA}.clients
-                          (parent_id, name, login, password_hash, is_active, inn, address,
+                          (parent_id, name, login, password_hash, password_plain, is_active, inn, address,
                            director_name, director_phone, director_email,
                            accountant_name, accountant_phone, accountant_email,
                            contact_name, contact_phone, contact_email)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         RETURNING id, name
                     """, (
-                        body.get('parent_id'), body['name'], body.get('login'), pwd_hash,
+                        body.get('parent_id'), body['name'], body.get('login'), pwd_hash, pwd_plain,
                         body.get('is_active', True), body.get('inn'), body.get('address'),
                         body.get('director_name'), body.get('director_phone'), body.get('director_email'),
                         body.get('accountant_name'), body.get('accountant_phone'), body.get('accountant_email'),
@@ -287,7 +288,7 @@ def handler(event: dict, context) -> dict:
                             return ok({'deleted': row['id']})
                 else:
                     if method == 'PUT':
-                        pwd_part = ', password_hash=%s' if body.get('password') else ''
+                        pwd_part = ', password_hash=%s, password_plain=%s' if body.get('password') else ''
                         vals = [
                             body.get('parent_id'), body['name'], body.get('login'),
                             body.get('is_active', True), body.get('inn'), body.get('address'),
@@ -297,6 +298,7 @@ def handler(event: dict, context) -> dict:
                         ]
                         if body.get('password'):
                             vals.insert(3, hash_password(body['password']))
+                            vals.insert(4, body['password'])
                         vals.append(rid)
                         cur.execute(f"""
                             UPDATE {SCHEMA}.clients SET

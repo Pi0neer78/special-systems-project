@@ -758,7 +758,7 @@ function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }
 type ClientDB = { id: number; client_id: number; config_database_id: number; config_name: string; current_config_version: string; update_date: string };
 type Client = {
   id: number; parent_id: number | null; parent_name: string | null; name: string;
-  login: string; is_active: boolean; inn: string; address: string;
+  login: string; password_plain?: string | null; is_active: boolean; inn: string; address: string;
   director_name: string; director_phone: string; director_email: string;
   accountant_name: string; accountant_phone: string; accountant_email: string;
   contact_name: string; contact_phone: string; contact_email: string;
@@ -810,13 +810,9 @@ function ClientPrintView({ client }: { client: Client }) {
   .badge.active{background:#dcfce7;color:#166534}
   .badge.blocked{background:#fee2e2;color:#991b1b}
   .badge.inn{background:#f0f9ff;color:#0369a1;border:1px solid #bae6fd}
-  /* Personal cabinet notice */
-  .cabinet-notice{background:#0f172a;border-radius:10px;padding:16px 20px;margin-bottom:20px;text-align:center}
-  .cabinet-notice .login-row{display:flex;justify-content:center;gap:32px;margin-bottom:10px}
-  .cabinet-notice .login-row .field label{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:2px}
-  .cabinet-notice .login-row .field span{font-size:18px;color:#fff;font-weight:700;font-family:'Oswald',sans-serif;letter-spacing:0.5px}
-  .cabinet-notice .cta{font-size:15px;font-weight:600;color:#fff;line-height:1.4}
-  .cabinet-notice .cta a{color:#60a5fa;font-weight:700;text-decoration:none}
+  /* Personal cabinet CTA */
+  .cabinet-cta{margin-top:12px;padding:12px 16px;background:#0f172a;border-radius:8px;font-size:15px;font-weight:600;color:#fff;line-height:1.4;text-align:center}
+  .cabinet-cta a{color:#60a5fa;font-weight:700;text-decoration:none}
   /* Sections */
   .section{margin-bottom:16px}
   .section-title{font-family:'Oswald',sans-serif;font-size:10.5px;font-weight:600;text-transform:uppercase;letter-spacing:2px;color:#2563eb;border-bottom:1px solid #e2e8f0;padding-bottom:5px;margin-bottom:10px}
@@ -826,7 +822,7 @@ function ClientPrintView({ client }: { client: Client }) {
   .field label{font-size:10px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.5px;display:block;margin-bottom:2px}
   .field span{font-size:12.5px;color:#0f172a;font-weight:500}
   /* General info grid */
-  .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
+  .info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:4px}
   .info-grid .field{padding:6px 8px;background:#f8fafc;border-radius:6px}
   /* Databases table */
   table{width:100%;border-collapse:collapse;font-size:12px}
@@ -867,19 +863,14 @@ function ClientPrintView({ client }: { client: Client }) {
   </div>
 </div>
 
-<div class="cabinet-notice">
-  <div class="login-row">
-    <div class="field"><label style="color:#94a3b8">Логин</label><span>${v(client.login)}</span></div>
-  </div>
-  <div class="cta">Для доступа к личному кабинету перейдите на сайт <a href="https://ssys.su">https://ssys.su</a></div>
-</div>
-
 <div class="section">
   <div class="section-title">Реквизиты доступа</div>
   <div class="info-grid">
     <div class="field"><label>Логин в системе</label><span>${v(client.login)}</span></div>
+    <div class="field"><label>Пароль</label><span>${v(client.password_plain)}</span></div>
     <div class="field"><label>Адрес</label><span>${v(client.address)}</span></div>
   </div>
+  <div class="cabinet-cta">Для доступа к личному кабинету перейдите на сайт <a href="https://ssys.su">https://ssys.su</a></div>
 </div>
 
 <div class="section">
