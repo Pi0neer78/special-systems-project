@@ -125,13 +125,13 @@ function launchRMS(id: string, password: string) {
 }
 
 async function launchRuDesktop(id: string, password: string) {
-  if (!id) { toast.error('Не заполнен ID3 для RuDesktop'); return; }
-  const copied = password ? await copyToClipboard(password) : false;
-  window.location.href = `rudesktop:${id}`;
-  if (password && !copied) {
-    toast.error('RuDesktop запущен, но пароль скопировать не удалось — скопируйте вручную');
+  if (!id && !password) { toast.error('Не заполнены ID3/пароль для RuDesktop'); return; }
+  const text = [id, password].filter(Boolean).join('   ');
+  const copied = await copyToClipboard(text);
+  if (copied) {
+    toast.success('ID и пароль RuDesktop скопированы — вставьте в окно подключения');
   } else {
-    toast.success(copied ? 'RuDesktop запущен, пароль скопирован — вставьте Ctrl+V' : 'RuDesktop запущен');
+    toast.error('Не удалось скопировать ID и пароль — скопируйте вручную');
   }
 }
 
@@ -640,7 +640,7 @@ function CredentialsSection() {
                             else if (n === 2) launchRMS(form.login2, form.password2);
                             else launchRuDesktop(form.login3, form.password3);
                           }}
-                          title={n === 1 ? 'Запустить AnyDesk с этим ID' : n === 2 ? 'Запустить RMS с этим ID и паролем' : 'Запустить RuDesktop с этим ID'}
+                          title={n === 1 ? 'Запустить AnyDesk с этим ID' : n === 2 ? 'Запустить RMS с этим ID и паролем' : 'Скопировать ID и пароль для RuDesktop'}
                           className="w-5 h-5 shrink-0 rounded hover:scale-110 transition-transform"
                         >
                           <img src={icon} alt={app} className="w-5 h-5 rounded" />
