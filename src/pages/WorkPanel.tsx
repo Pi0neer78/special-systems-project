@@ -1266,7 +1266,7 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
   const openEdit = (t: Ticket) => {
     setEditForm({
       status: t.status,
-      assignee_id: t.assignee_id ? String(t.assignee_id) : '',
+      assignee_id: t.assignee_id !== null && t.assignee_id !== undefined ? String(t.assignee_id) : '',
       result: t.result || '',
     });
     setEditModal(t);
@@ -1839,7 +1839,7 @@ function TasksSection({ token }: { token: string }) {
       all_day: t.all_day,
       repeat_rule: t.repeat_rule,
       repeat_until: t.repeat_until || '',
-      assignee_id: t.assignee_id ? String(t.assignee_id) : '',
+      assignee_id: t.assignee_id !== null && t.assignee_id !== undefined ? String(t.assignee_id) : '',
       watcher_ids: t.watchers.map(w => w.id),
     });
     setEditModal(t);

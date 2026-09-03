@@ -444,7 +444,7 @@ def handler(event: dict, context) -> dict:
 
             if 'assignee_id' in body:
                 sets.append("assignee_id = %s")
-                params.append(body['assignee_id'] or None)
+                params.append(body['assignee_id'] if body['assignee_id'] not in ('', None) else None)
 
             if 'result' in body:
                 sets.append("result = %s")
