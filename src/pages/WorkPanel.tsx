@@ -834,6 +834,7 @@ function UpdatesSection() {
   const [saving, setSaving] = useState(false);
   const [expandedClients, setExpandedClients] = useState<Set<number>>(new Set());
   const [filterDb, setFilterDb] = useState('');
+  const [filterDbType, setFilterDbType] = useState('');
   const [onlyOutdated, setOnlyOutdated] = useState(false);
 
   const toggleClient = (clientId: number) =>
@@ -851,9 +852,10 @@ function UpdatesSection() {
 
   const dbNames = [...new Set(rows.map(r => r.config_name))].sort();
   const outdatedCount = rows.filter(r => versionGt(r.actual_config_version, r.current_config_version)).length;
-  const filterActive = !!filterDb || onlyOutdated;
+  const filterActive = !!filterDb || !!filterDbType || onlyOutdated;
   const matchesFilter = (r: UpdateRow) =>
     (!filterDb || r.config_name === filterDb) &&
+    (!filterDbType || (r.db_type || 'file') === filterDbType) &&
     (!onlyOutdated || versionGt(r.actual_config_version, r.current_config_version));
 
   const openHistory = async (row: UpdateRow) => {
@@ -891,6 +893,11 @@ function UpdatesSection() {
           <option value="">Все базы данных</option>
           {dbNames.map(n => <option key={n} value={n}>{n}</option>)}
         </select>
+        <select value={filterDbType} onChange={e => setFilterDbType(e.target.value)}
+          className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+          <option value="">Все типы СУБД</option>
+          {(Object.keys(DB_TYPE_LABELS) as DbType[]).map(t => <option key={t} value={t}>{DB_TYPE_LABELS[t]}</option>)}
+        </select>
         <button onClick={() => setOnlyOutdated(v => !v)}
           className={`h-8 px-3 rounded-md border text-xs font-medium flex items-center gap-1.5 transition-colors ${onlyOutdated ? 'bg-yellow-500/15 text-yellow-400 border-yellow-500/40' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary'}`}>
           <Icon name="AlertTriangle" size={12} />
@@ -898,7 +905,7 @@ function UpdatesSection() {
           {outdatedCount > 0 && <span className="text-[10px] bg-black/20 rounded px-1.5 py-0.5">{outdatedCount}</span>}
         </button>
         {filterActive && (
-          <button onClick={() => { setFilterDb(''); setOnlyOutdated(false); }}
+          <button onClick={() => { setFilterDb(''); setFilterDbType(''); setOnlyOutdated(false); }}
             className="h-8 px-2.5 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
             Сбросить фильтр
           </button>
