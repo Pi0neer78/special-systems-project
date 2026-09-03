@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { toast } from 'sonner';
+import * as XLSX from 'xlsx';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -273,6 +274,86 @@ function buildTree(folders: Folder[], parentId: number | null = null): Folder[] 
   return folders.filter(f => f.parent_id === parentId).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
 }
 
+function folderPath(folder: Folder, folders: Folder[]): string {
+  const parts = [folder.name];
+  let cur = folder;
+  while (cur.parent_id !== null) {
+    const parent = folders.find(f => f.id === cur.parent_id);
+    if (!parent) break;
+    parts.unshift(parent.name);
+    cur = parent;
+  }
+  return parts.join(' / ');
+}
+
+async function exportCredentialsToExcel() {
+  const [foldersData, credsData] = await Promise.all([
+    api('resource=folders'),
+    api('resource=credentials'),
+  ]);
+  if (!Array.isArray(foldersData) || !Array.isArray(credsData)) {
+    toast.error('Не удалось загрузить данные для экспорта');
+    return;
+  }
+  const folders: Folder[] = foldersData;
+  const creds: Credential[] = credsData;
+
+  const rows: Record<string, string>[] = [];
+  const walk = (parentId: number | null) => {
+    const children = buildTree(folders, parentId);
+    for (const folder of children) {
+      const folderCreds = creds
+        .filter(c => c.folder_id === folder.id)
+        .sort((a, b) => a.name.localeCompare(b.name));
+      const path = folderPath(folder, folders);
+      if (folderCreds.length === 0) {
+        rows.push({
+          'Раздел': path, 'Название': '', 'Логин': '', 'Пароль': '',
+          'ID/Логин AnyDesk': '', 'Пароль AnyDesk': '',
+          'ID/Логин RMS': '', 'Пароль RMS': '',
+          'ID/Логин RuDesktop': '', 'Пароль RuDesktop': '',
+          'IP': '', 'Примечания': '',
+        });
+      }
+      for (const c of folderCreds) {
+        rows.push({
+          'Раздел': path,
+          'Название': c.name || '',
+          'Логин': c.login || '',
+          'Пароль': c.password || '',
+          'ID/Логин AnyDesk': c.login1 || '',
+          'Пароль AnyDesk': c.password1 || '',
+          'ID/Логин RMS': c.login2 || '',
+          'Пароль RMS': c.password2 || '',
+          'ID/Логин RuDesktop': c.login3 || '',
+          'Пароль RuDesktop': c.password3 || '',
+          'IP': c.ip || '',
+          'Примечания': c.notes || '',
+        });
+      }
+      walk(folder.id);
+    }
+  };
+  walk(null);
+
+  if (rows.length === 0) {
+    toast.error('Нет данных для экспорта');
+    return;
+  }
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [
+    { wch: 32 }, { wch: 22 }, { wch: 18 }, { wch: 18 },
+    { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 },
+    { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 30 },
+  ];
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Учётные данные');
+  const stamp = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `Учётные данные ${stamp}.xlsx`);
+  toast.success('Файл сформирован');
+}
+
 function HighlightText({ text, query }: { text: string; query: string }) {
   if (!query) return <>{text}</>;
   const idx = text.toLowerCase().indexOf(query.toLowerCase());
@@ -342,6 +423,7 @@ function CredentialsSection() {
   const [modalVal, setModalVal] = useState('');
   const [moveTo, setMoveTo] = useState<string>('');
   const [deletingFolder, setDeletingFolder] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const ctxRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
@@ -530,6 +612,14 @@ function CredentialsSection() {
             <FolderNode key={f.id} folder={f} folders={filteredFolders} selectedId={selectedFolder}
               onSelect={setSelectedFolder} onMenu={onMenu} depth={0} forceExpand={!!filter} highlight={filter} />
           ))}
+        </div>
+        <div className="p-2 border-t border-border">
+          <Button variant="outline" size="sm" disabled={exporting}
+            className="w-full h-8 text-xs border-border text-muted-foreground hover:text-foreground"
+            onClick={async () => { setExporting(true); try { await exportCredentialsToExcel(); } finally { setExporting(false); } }}>
+            <Icon name={exporting ? 'Loader' : 'FileSpreadsheet'} size={13} className={`mr-1.5 ${exporting ? 'animate-spin' : ''}`} />
+            {exporting ? 'Формирование...' : 'Экспорт в Excel'}
+          </Button>
         </div>
       </div>
 
