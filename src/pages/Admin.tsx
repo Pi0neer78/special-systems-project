@@ -755,7 +755,10 @@ function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }
 // CLIENTS SECTION
 // ══════════════════════════════════════════════════════════════════════════════
 
-type ClientDB = { id: number; client_id: number; config_database_id: number; config_name: string; comment?: string; current_config_version: string; update_date: string };
+type DbType = 'file' | 'server' | 'http';
+const DB_TYPE_LABELS: Record<DbType, string> = { file: 'Файловая', server: 'Серверная', http: 'HTTP' };
+const DB_TYPE_ICONS: Record<DbType, string> = { file: 'HardDrive', server: 'Server', http: 'Globe' };
+type ClientDB = { id: number; client_id: number; config_database_id: number; config_name: string; comment?: string; db_type?: DbType; current_config_version: string; update_date: string };
 type Client = {
   id: number; parent_id: number | null; parent_name: string | null; name: string;
   login: string; password_plain?: string | null; is_active: boolean; inn: string; address: string;
@@ -784,10 +787,11 @@ function ClientPrintView({ client }: { client: Client }) {
       ? (client.databases || []).map(db => `
           <tr>
             <td>${v(db.config_name)}${db.comment ? `<br><span style="color:#94a3b8;font-size:0.9em">${v(db.comment)}</span>` : ''}</td>
+            <td>${DB_TYPE_LABELS[db.db_type || 'file']}</td>
             <td>${v(db.current_config_version)}</td>
             <td>${db.update_date ? new Date(db.update_date).toLocaleDateString('ru-RU') : '—'}</td>
           </tr>`).join('')
-      : '<tr><td colspan="3" style="color:#94a3b8;font-style:italic">Нет привязанных баз данных</td></tr>';
+      : '<tr><td colspan="4" style="color:#94a3b8;font-style:italic">Нет привязанных баз данных</td></tr>';
 
     w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>Карточка клиента — ${client.name}</title>
@@ -892,7 +896,7 @@ function ClientPrintView({ client }: { client: Client }) {
 <div class="section">
   <div class="section-title">Базы данных 1С (${(client.databases || []).length})</div>
   <table>
-    <thead><tr><th>Конфигурация</th><th>Текущая версия</th><th>Дата обновления</th></tr></thead>
+    <thead><tr><th>Конфигурация</th><th>Тип СУБД</th><th>Текущая версия</th><th>Дата обновления</th></tr></thead>
     <tbody>${dbRows}</tbody>
   </table>
 </div>
@@ -996,9 +1000,9 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
     }
     for (const db of clientDbs) {
       if (!db.id && clientId) {
-        await api(`resource=clients&id=${clientId}&sub=db`, 'POST', { config_database_id: db.config_database_id, current_config_version: db.current_config_version, update_date: db.update_date || null, comment: db.comment || null });
+        await api(`resource=clients&id=${clientId}&sub=db`, 'POST', { config_database_id: db.config_database_id, current_config_version: db.current_config_version, update_date: db.update_date || null, comment: db.comment || null, db_type: db.db_type || 'file' });
       } else if (db.id) {
-        await api(`resource=clients&id=${db.client_id}&sub=db&subid=${db.id}`, 'PUT', { config_database_id: db.config_database_id, current_config_version: db.current_config_version, update_date: db.update_date || null, comment: db.comment || null });
+        await api(`resource=clients&id=${db.client_id}&sub=db&subid=${db.id}`, 'PUT', { config_database_id: db.config_database_id, current_config_version: db.current_config_version, update_date: db.update_date || null, comment: db.comment || null, db_type: db.db_type || 'file' });
       }
     }
     setRemovedDbIds([]);
@@ -1027,7 +1031,7 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
   };
 
   const addDbRow = () => {
-    setClientDbs(prev => [...prev, { id: 0, client_id: modal.item?.id || 0, config_database_id: 0, config_name: '', comment: '', current_config_version: '', update_date: '' }]);
+    setClientDbs(prev => [...prev, { id: 0, client_id: modal.item?.id || 0, config_database_id: 0, config_name: '', comment: '', db_type: 'file', current_config_version: '', update_date: '' }]);
   };
 
   const removeDbRow = (idx: number) => {
@@ -1092,7 +1096,10 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
         <td className="px-3 py-2">
           <div className="flex flex-wrap gap-1">
             {(c.databases || []).map(db => (
-              <span key={db.id} title={db.comment || undefined} className="text-xs bg-primary/15 text-primary px-1.5 py-0.5 rounded font-mono">{db.config_name}</span>
+              <span key={db.id} title={db.comment || undefined} className="flex items-center gap-1 text-xs bg-primary/15 text-primary px-1.5 py-0.5 rounded font-mono">
+                <Icon name={DB_TYPE_ICONS[db.db_type || 'file']} size={11} />
+                {db.config_name}
+              </span>
             ))}
           </div>
         </td>
@@ -1288,8 +1295,24 @@ function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]
                             <Icon name="Trash2" size={15} />
                           </button>
                         </div>
-                        <div><label className="text-xs text-muted-foreground mb-1 block">Комментарий</label>
-                          <Input value={row.comment || ''} onChange={e => updateDbRow(idx, 'comment', e.target.value)} className={inputCls} placeholder="Например: основная база, тестовая копия..." /></div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div><label className="text-xs text-muted-foreground mb-1 block">Тип СУБД</label>
+                            <Select value={row.db_type || 'file'} onValueChange={v => updateDbRow(idx, 'db_type', v)}>
+                              <SelectTrigger className="bg-secondary/40 border-border h-8 text-sm">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent className="bg-card border-border">
+                                {(Object.keys(DB_TYPE_LABELS) as DbType[]).map(t => (
+                                  <SelectItem key={t} value={t}>
+                                    <span className="flex items-center gap-1.5"><Icon name={DB_TYPE_ICONS[t]} size={13} />{DB_TYPE_LABELS[t]}</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div><label className="text-xs text-muted-foreground mb-1 block">Комментарий</label>
+                            <Input value={row.comment || ''} onChange={e => updateDbRow(idx, 'comment', e.target.value)} className={inputCls} placeholder="Например: основная база..." /></div>
+                        </div>
                       </div>
                     ))}
                     <Button type="button" variant="outline" size="sm" onClick={addDbRow}

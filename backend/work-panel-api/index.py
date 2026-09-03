@@ -323,6 +323,7 @@ def handler(event: dict, context) -> dict:
                         db.id AS config_db_id,
                         db.config_name,
                         cd.comment,
+                        cd.db_type,
                         cd.current_config_version,
                         db.actual_config_version,
                         cd.update_date,

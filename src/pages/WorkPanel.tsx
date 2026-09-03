@@ -48,9 +48,12 @@ interface CredFile {
   id: number; credential_id: number; file_name: string; file_url: string;
   file_size: number | null; content_type: string | null; created_at: string;
 }
+type DbType = 'file' | 'server' | 'http';
+const DB_TYPE_LABELS: Record<DbType, string> = { file: 'Файловая', server: 'Серверная', http: 'HTTP' };
+const DB_TYPE_ICONS: Record<DbType, string> = { file: 'HardDrive', server: 'Server', http: 'Globe' };
 interface UpdateRow {
   client_db_id: number; client_id: number; client_parent_id: number | null; client_name: string;
-  config_db_id: number; config_name: string; comment: string | null;
+  config_db_id: number; config_name: string; comment: string | null; db_type: DbType | null;
   current_config_version: string | null; actual_config_version: string | null;
   update_date: string | null; updated_by_name: string | null; updated_by_login: string | null;
 }
@@ -952,8 +955,8 @@ function UpdatesSection() {
               return (
                 <tr key={row.client_db_id} className={`border-b border-border/40 transition-colors ${outdated ? 'bg-yellow-500/5 hover:bg-yellow-500/10' : 'hover:bg-secondary/20'}`}>
                   <td className="py-2" style={{ paddingLeft: `${12 + depth * 20}px` }}>
-                    <span className="flex items-center gap-1.5">
-                      <Icon name="Database" size={11} className="text-border shrink-0" />
+                    <span className="flex items-center gap-1.5" title={DB_TYPE_LABELS[row.db_type || 'file']}>
+                      <Icon name={DB_TYPE_ICONS[row.db_type || 'file']} size={13} className="text-muted-foreground shrink-0" />
                     </span>
                   </td>
                   <td className="px-3 py-2 text-muted-foreground text-sm">
@@ -1060,7 +1063,12 @@ function UpdatesSection() {
             <div className="space-y-4 mt-1">
               <div className="p-3 rounded-lg bg-secondary/40 border border-border text-sm">
                 <div className="text-muted-foreground mb-1">Клиент: <span className="text-foreground font-medium">{updateModal.client_name}</span></div>
-                <div className="text-muted-foreground">База: <span className="text-foreground">{updateModal.config_name}</span></div>
+                <div className="text-muted-foreground flex items-center gap-1.5">
+                  База: <span className="text-foreground">{updateModal.config_name}</span>
+                  <span title={DB_TYPE_LABELS[updateModal.db_type || 'file']}>
+                    <Icon name={DB_TYPE_ICONS[updateModal.db_type || 'file']} size={12} className="text-muted-foreground" />
+                  </span>
+                </div>
                 {updateModal.comment && <div className="text-xs text-muted-foreground mt-0.5">{updateModal.comment}</div>}
               </div>
               <div className="grid grid-cols-2 gap-3">

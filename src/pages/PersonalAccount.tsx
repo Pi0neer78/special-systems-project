@@ -57,11 +57,16 @@ type Ticket = {
   assignee_name: string | null;
 };
 
+type DbType = 'file' | 'server' | 'http';
+const DB_TYPE_LABELS: Record<DbType, string> = { file: 'Файловая', server: 'Серверная', http: 'HTTP' };
+const DB_TYPE_ICONS: Record<DbType, string> = { file: 'HardDrive', server: 'Server', http: 'Globe' };
+
 type UpdateRow = {
   client_db_id: number;
   client_name: string;
   config_name: string;
   comment: string | null;
+  db_type: DbType | null;
   current_config_version: string | null;
   actual_config_version: string | null;
   update_date: string | null;
@@ -342,7 +347,9 @@ function DatabasesPanel({ token }: { token: string }) {
             <div key={row.client_db_id} className={`px-4 py-3 border-b border-border/40 ${outdated ? 'bg-yellow-500/5' : ''}`}>
               <div className="flex items-start justify-between gap-3 mb-1.5">
                 <div className="flex items-center gap-2 min-w-0">
-                  <Icon name="Database" size={14} className="text-muted-foreground shrink-0" />
+                  <span title={DB_TYPE_LABELS[row.db_type || 'file']}>
+                    <Icon name={DB_TYPE_ICONS[row.db_type || 'file']} size={14} className="text-muted-foreground shrink-0" />
+                  </span>
                   <div className="min-w-0">
                     <span className="text-sm font-medium truncate block">{row.config_name}</span>
                     {row.comment && <span className="text-xs text-muted-foreground truncate block">{row.comment}</span>}

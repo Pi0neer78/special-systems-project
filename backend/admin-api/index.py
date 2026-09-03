@@ -220,7 +220,7 @@ def handler(event: dict, context) -> dict:
                         placeholders = ','.join(['%s'] * len(client_ids))
                         cur.execute(f"""
                             SELECT cd.id, cd.client_id, cd.config_database_id,
-                                   db.config_name, cd.current_config_version, cd.update_date, cd.comment
+                                   db.config_name, cd.current_config_version, cd.update_date, cd.comment, cd.db_type
                             FROM {SCHEMA}.client_databases cd
                             JOIN {SCHEMA}.config_databases db ON db.id = cd.config_database_id
                             WHERE cd.client_id IN ({placeholders})
@@ -265,17 +265,17 @@ def handler(event: dict, context) -> dict:
                     if not subid:
                         if method == 'POST':
                             cur.execute(f"""
-                                INSERT INTO {SCHEMA}.client_databases (client_id, config_database_id, current_config_version, update_date, comment)
-                                VALUES (%s,%s,%s,%s,%s) RETURNING id
-                            """, (rid, body['config_database_id'], body.get('current_config_version'), body.get('update_date') or None, body.get('comment')))
+                                INSERT INTO {SCHEMA}.client_databases (client_id, config_database_id, current_config_version, update_date, comment, db_type)
+                                VALUES (%s,%s,%s,%s,%s,%s) RETURNING id
+                            """, (rid, body['config_database_id'], body.get('current_config_version'), body.get('update_date') or None, body.get('comment'), body.get('db_type', 'file')))
                             conn.commit()
                             return ok({'id': cur.fetchone()['id']})
                     else:
                         if method == 'PUT':
                             cur.execute(f"""
-                                UPDATE {SCHEMA}.client_databases SET config_database_id=%s, current_config_version=%s, update_date=%s, comment=%s
+                                UPDATE {SCHEMA}.client_databases SET config_database_id=%s, current_config_version=%s, update_date=%s, comment=%s, db_type=%s
                                 WHERE id=%s RETURNING id
-                            """, (body['config_database_id'], body.get('current_config_version'), body.get('update_date') or None, body.get('comment'), subid))
+                            """, (body['config_database_id'], body.get('current_config_version'), body.get('update_date') or None, body.get('comment'), body.get('db_type', 'file'), subid))
                             conn.commit()
                             return ok({'id': subid})
                         if method == 'DELETE':
