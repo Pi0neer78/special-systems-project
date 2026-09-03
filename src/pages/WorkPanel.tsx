@@ -50,7 +50,7 @@ interface CredFile {
 }
 interface UpdateRow {
   client_db_id: number; client_id: number; client_parent_id: number | null; client_name: string;
-  config_db_id: number; config_name: string;
+  config_db_id: number; config_name: string; comment: string | null;
   current_config_version: string | null; actual_config_version: string | null;
   update_date: string | null; updated_by_name: string | null; updated_by_login: string | null;
 }
@@ -956,7 +956,10 @@ function UpdatesSection() {
                       <Icon name="Database" size={11} className="text-border shrink-0" />
                     </span>
                   </td>
-                  <td className="px-3 py-2 text-muted-foreground text-sm">{row.config_name}</td>
+                  <td className="px-3 py-2 text-muted-foreground text-sm">
+                    <div>{row.config_name}</div>
+                    {row.comment && <div className="text-xs text-muted-foreground/70">{row.comment}</div>}
+                  </td>
                   <td className={`px-3 py-2 font-mono text-sm ${outdated ? 'text-yellow-400 font-semibold' : ''}`}>
                     {row.current_config_version || <span className="text-muted-foreground">—</span>}
                     {outdated && <Icon name="AlertTriangle" size={13} className="inline ml-1.5 text-yellow-400" />}
@@ -1058,6 +1061,7 @@ function UpdatesSection() {
               <div className="p-3 rounded-lg bg-secondary/40 border border-border text-sm">
                 <div className="text-muted-foreground mb-1">Клиент: <span className="text-foreground font-medium">{updateModal.client_name}</span></div>
                 <div className="text-muted-foreground">База: <span className="text-foreground">{updateModal.config_name}</span></div>
+                {updateModal.comment && <div className="text-xs text-muted-foreground mt-0.5">{updateModal.comment}</div>}
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

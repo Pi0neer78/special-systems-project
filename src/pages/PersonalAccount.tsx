@@ -61,6 +61,7 @@ type UpdateRow = {
   client_db_id: number;
   client_name: string;
   config_name: string;
+  comment: string | null;
   current_config_version: string | null;
   actual_config_version: string | null;
   update_date: string | null;
@@ -342,7 +343,10 @@ function DatabasesPanel({ token }: { token: string }) {
               <div className="flex items-start justify-between gap-3 mb-1.5">
                 <div className="flex items-center gap-2 min-w-0">
                   <Icon name="Database" size={14} className="text-muted-foreground shrink-0" />
-                  <span className="text-sm font-medium truncate">{row.config_name}</span>
+                  <div className="min-w-0">
+                    <span className="text-sm font-medium truncate block">{row.config_name}</span>
+                    {row.comment && <span className="text-xs text-muted-foreground truncate block">{row.comment}</span>}
+                  </div>
                 </div>
                 {outdated && (
                   <span className="flex items-center gap-1 text-xs text-yellow-400 font-medium shrink-0">

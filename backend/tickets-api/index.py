@@ -526,6 +526,7 @@ def handler(event: dict, context) -> dict:
                 cd.id AS client_db_id,
                 c.name AS client_name,
                 db.config_name,
+                cd.comment,
                 cd.current_config_version,
                 db.actual_config_version,
                 cd.update_date,

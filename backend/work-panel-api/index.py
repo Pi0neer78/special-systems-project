@@ -322,6 +322,7 @@ def handler(event: dict, context) -> dict:
                         c.name AS client_name,
                         db.id AS config_db_id,
                         db.config_name,
+                        cd.comment,
                         cd.current_config_version,
                         db.actual_config_version,
                         cd.update_date,
