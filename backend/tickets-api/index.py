@@ -145,6 +145,7 @@ def handler(event: dict, context) -> dict:
       GET    ?resource=client-databases     — базы данных клиента (только клиент)
       GET    ?resource=ticket-messages&ticket_id=N   — переписка по заявке
       POST   ?resource=ticket-messages               — отправить сообщение/файл в переписку
+      GET    ?resource=client-messages               — последние сообщения от клиентов (для уведомлений сотрудников)
     """
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
@@ -551,6 +552,34 @@ def handler(event: dict, context) -> dict:
                 CASE WHEN cd.client_id = {client_id_from_token} THEN 0 ELSE 1 END,
                 c.name,
                 db.config_name
+        """)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return resp(200, rows)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # СООБЩЕНИЯ ОТ КЛИЕНТОВ (для звуковых уведомлений сотрудников)
+    # ══════════════════════════════════════════════════════════════════════════
+    # GET ?resource=client-messages
+    # Response: [ { id, ticket_id, client_name, sender_name, message, created_at }, ... ]
+    # Администратор видит сообщения по всем заявкам, сотрудник — только по своим (assignee_id)
+    if resource == 'client-messages' and method == 'GET':
+        admin_token = headers.get('X-Admin-Token', '')
+        admin_user_id, admin_role, _ = verify_admin_token(admin_token) if admin_token else (None, None, None)
+        if not admin_user_id:
+            return resp(401, {'error': 'Не авторизован'})
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        assignee_filter = '' if admin_role == 'admin' else f"AND t.assignee_id = {admin_user_id}"
+        cur.execute(f"""
+            SELECT m.id, m.ticket_id, c.name AS client_name, m.sender_name, m.message, m.created_at
+            FROM {SCHEMA}.ticket_messages m
+            JOIN {SCHEMA}.tickets t ON t.id = m.ticket_id
+            JOIN {SCHEMA}.clients c ON c.id = t.client_id
+            WHERE m.sender_type = 'client' {assignee_filter}
+            ORDER BY m.created_at DESC
+            LIMIT 30
         """)
         rows = cur.fetchall()
         cur.close()

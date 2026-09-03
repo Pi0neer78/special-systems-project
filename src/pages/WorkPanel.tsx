@@ -1368,13 +1368,17 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
           <p className="text-sm">Заявок не найдено</p>
         </div>
       ) : view === 'table' ? (
-        <div className="overflow-auto">
-          <table className="w-full text-sm border-collapse">
+        <div>
+          <table className="w-full text-sm border-collapse table-fixed">
             <thead>
               <tr className="border-b border-border">
-                {['#', 'Клиент', 'Тип', 'Описание', 'Приоритет', 'Статус', 'Подана', 'Решить до', 'Ответственный', ''].map(h => (
-                  <th key={h} className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase whitespace-nowrap">{h}</th>
-                ))}
+                <th className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase w-[64px]">#</th>
+                <th className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase w-[16%]">Клиент</th>
+                <th className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase">Заявка</th>
+                <th className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase w-[110px]">Статус</th>
+                <th className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase w-[15%]">Сроки</th>
+                <th className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase w-[12%]">Ответственный</th>
+                <th className="text-left px-3 py-2.5 text-xs font-mono text-muted-foreground uppercase w-[110px]"></th>
               </tr>
             </thead>
             <tbody>
@@ -1383,31 +1387,35 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
                 const pr = PRIORITY_LABELS[t.priority] || PRIORITY_LABELS.medium;
                 const overdue = isOverdue(t);
                 return (
-                  <tr key={t.id} className={`border-b border-border/50 transition-colors ${overdue ? 'bg-red-500/8 hover:bg-red-500/12' : 'hover:bg-secondary/30'}`}>
-                    <td className="px-3 py-2.5 text-xs text-muted-foreground">#{t.id}</td>
-                    <td className="px-3 py-2.5 font-medium whitespace-nowrap">{t.client_name}</td>
-                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{t.problem_type}</td>
-                    <td className="px-3 py-2.5 max-w-[220px]">
-                      <button className="truncate text-sm text-left hover:text-primary transition-colors block w-full" onClick={() => setDetailModal(t)}>
+                  <tr key={t.id} className={`border-b border-border/50 transition-colors align-top ${overdue ? 'bg-red-500/8 hover:bg-red-500/12' : 'hover:bg-secondary/30'}`}>
+                    <td className="px-3 py-3 text-xs text-muted-foreground">#{t.id}</td>
+                    <td className="px-3 py-3">
+                      <div className="font-medium break-words">{t.client_name}</div>
+                      <div className="text-xs text-muted-foreground break-words">{t.problem_type}</div>
+                    </td>
+                    <td className="px-3 py-3">
+                      <button className="text-sm text-left hover:text-primary transition-colors block w-full line-clamp-2" onClick={() => setDetailModal(t)}>
                         <span className={overdue ? 'text-red-400 font-bold' : ''}>{t.description}</span>
                       </button>
+                      <div className={`text-xs font-medium mt-1 ${pr.color}`}>{pr.label}</div>
                     </td>
-                    <td className={`px-3 py-2.5 text-xs font-medium whitespace-nowrap ${pr.color}`}>{pr.label}</td>
-                    <td className="px-3 py-2.5 whitespace-nowrap">
+                    <td className="px-3 py-3">
                       <select value={t.status} onChange={e => changeTicketStatus(t, e.target.value)}
-                        className={`bg-transparent text-xs font-medium focus:outline-none ${st.color}`}>
+                        className={`bg-transparent text-xs font-medium focus:outline-none max-w-full ${st.color}`}>
                         {STATUSES_LIST.map(s => <option key={s.value} value={s.value} className="text-foreground bg-background">{s.label}</option>)}
                       </select>
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{new Date(t.submitted_at).toLocaleString('ru')}</td>
-                    <td className={`px-3 py-2.5 text-xs whitespace-nowrap ${overdue ? 'text-red-400 font-bold' : 'text-muted-foreground'}`}>
-                      {t.deadline ? new Date(t.deadline).toLocaleString('ru') : '—'}
+                    <td className="px-3 py-3 text-xs">
+                      <div className="text-muted-foreground">Подана: {new Date(t.submitted_at).toLocaleString('ru')}</div>
+                      <div className={overdue ? 'text-red-400 font-bold' : 'text-muted-foreground'}>
+                        До: {t.deadline ? new Date(t.deadline).toLocaleString('ru') : '—'}
+                      </div>
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">
+                    <td className="px-3 py-3 text-xs text-muted-foreground break-words">
                       {t.assignee_name || t.assignee_login || '—'}
                     </td>
-                    <td className="px-3 py-2.5">
-                      <div className="flex gap-1.5 justify-end">
+                    <td className="px-3 py-3">
+                      <div className="flex gap-1.5 justify-end flex-wrap">
                         <Button size="sm" className="h-7 text-xs bg-secondary/60 text-foreground border border-border hover:bg-secondary" onClick={() => setDetailModal(t)}>
                           <Icon name="Eye" size={12} />
                         </Button>
@@ -2752,6 +2760,69 @@ function NewTicketNotifier({ token }: { token: string }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// NEW CLIENT MESSAGE NOTIFIER (звук + уведомление на ответ клиента в чате заявки)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const MESSAGE_POLL_MS = 20 * 1000;
+
+type ClientMessageRow = { id: number; ticket_id: number; client_name: string; sender_name: string | null; message: string | null; created_at: string };
+
+function NewClientMessageNotifier({ token }: { token: string }) {
+  const seenRef = useRef<Set<number> | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    audioRef.current = new Audio('/notification.mp3');
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const check = async () => {
+      const data = await fetch(`${TICKETS_URL}?resource=client-messages`, { headers: { 'X-Admin-Token': token } })
+        .then(r => r.json()).catch(() => null);
+      if (cancelled || !Array.isArray(data)) return;
+
+      const ids = new Set<number>(data.map((m: ClientMessageRow) => m.id));
+
+      if (seenRef.current === null) {
+        seenRef.current = ids;
+        return;
+      }
+
+      const fresh = data.filter((m: ClientMessageRow) => !seenRef.current!.has(m.id));
+      seenRef.current = ids;
+      if (fresh.length === 0) return;
+
+      audioRef.current?.play().catch(() => {});
+
+      fresh.forEach((m: ClientMessageRow) => {
+        const title = 'Новое сообщение от клиента';
+        const body = `${m.client_name}: ${m.message || 'Прикреплён файл'}`;
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          const n = new Notification(title, { body, icon: '/favicon.svg', tag: `client-msg-${m.id}` });
+          n.onclick = () => { window.focus(); n.close(); };
+        }
+      });
+
+      const last = fresh[0];
+      toast(fresh.length === 1 ? 'Клиент ответил в заявке' : `Новых сообщений: ${fresh.length}`, {
+        description: `${last.client_name}: ${last.message || 'Прикреплён файл'}`,
+      });
+    };
+
+    check();
+    const interval = setInterval(check, MESSAGE_POLL_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [token]);
+
+  return null;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -2849,6 +2920,7 @@ export default function WorkPanel() {
 
       <TaskReminder token={localStorage.getItem(TOKEN_KEY) || ''} userId={authInfo.user_id} />
       <NewTicketNotifier token={localStorage.getItem(TOKEN_KEY) || ''} />
+      <NewClientMessageNotifier token={localStorage.getItem(TOKEN_KEY) || ''} />
     </div>
   );
 }
