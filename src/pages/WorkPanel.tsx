@@ -274,17 +274,7 @@ function buildTree(folders: Folder[], parentId: number | null = null): Folder[] 
   return folders.filter(f => f.parent_id === parentId).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name));
 }
 
-function folderPath(folder: Folder, folders: Folder[]): string {
-  const parts = [folder.name];
-  let cur = folder;
-  while (cur.parent_id !== null) {
-    const parent = folders.find(f => f.id === cur.parent_id);
-    if (!parent) break;
-    parts.unshift(parent.name);
-    cur = parent;
-  }
-  return parts.join(' / ');
-}
+const XLSX_MAX_OUTLINE = 7;
 
 async function exportCredentialsToExcel() {
   const [foldersData, credsData] = await Promise.all([
@@ -298,60 +288,63 @@ async function exportCredentialsToExcel() {
   const folders: Folder[] = foldersData;
   const creds: Credential[] = credsData;
 
-  const rows: Record<string, string>[] = [];
-  const walk = (parentId: number | null) => {
+  const HEADERS = [
+    'Раздел / Учётная запись', 'Логин', 'Пароль',
+    'ID/Логин AnyDesk', 'Пароль AnyDesk',
+    'ID/Логин RMS', 'Пароль RMS',
+    'ID/Логин RuDesktop', 'Пароль RuDesktop',
+    'IP', 'Примечания',
+  ];
+  const aoa: (string)[][] = [HEADERS];
+  const levels: number[] = [0];
+
+  const walk = (parentId: number | null, depth: number) => {
     const children = buildTree(folders, parentId);
     for (const folder of children) {
+      const indent = '   '.repeat(depth);
+      aoa.push([`${indent}${folder.name}`, '', '', '', '', '', '', '', '', '', '']);
+      levels.push(Math.min(depth, XLSX_MAX_OUTLINE));
+
       const folderCreds = creds
         .filter(c => c.folder_id === folder.id)
         .sort((a, b) => a.name.localeCompare(b.name));
-      const path = folderPath(folder, folders);
-      if (folderCreds.length === 0) {
-        rows.push({
-          'Раздел': path, 'Название': '', 'Логин': '', 'Пароль': '',
-          'ID/Логин AnyDesk': '', 'Пароль AnyDesk': '',
-          'ID/Логин RMS': '', 'Пароль RMS': '',
-          'ID/Логин RuDesktop': '', 'Пароль RuDesktop': '',
-          'IP': '', 'Примечания': '',
-        });
-      }
+      const childIndent = '   '.repeat(depth + 1);
       for (const c of folderCreds) {
-        rows.push({
-          'Раздел': path,
-          'Название': c.name || '',
-          'Логин': c.login || '',
-          'Пароль': c.password || '',
-          'ID/Логин AnyDesk': c.login1 || '',
-          'Пароль AnyDesk': c.password1 || '',
-          'ID/Логин RMS': c.login2 || '',
-          'Пароль RMS': c.password2 || '',
-          'ID/Логин RuDesktop': c.login3 || '',
-          'Пароль RuDesktop': c.password3 || '',
-          'IP': c.ip || '',
-          'Примечания': c.notes || '',
-        });
+        aoa.push([
+          `${childIndent}${c.name || ''}`,
+          c.login || '', c.password || '',
+          c.login1 || '', c.password1 || '',
+          c.login2 || '', c.password2 || '',
+          c.login3 || '', c.password3 || '',
+          c.ip || '', c.notes || '',
+        ]);
+        levels.push(Math.min(depth + 1, XLSX_MAX_OUTLINE));
       }
-      walk(folder.id);
+
+      walk(folder.id, depth + 1);
     }
   };
-  walk(null);
+  walk(null, 0);
 
-  if (rows.length === 0) {
+  if (aoa.length <= 1) {
     toast.error('Нет данных для экспорта');
     return;
   }
 
-  const ws = XLSX.utils.json_to_sheet(rows);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [
-    { wch: 32 }, { wch: 22 }, { wch: 18 }, { wch: 18 },
+    { wch: 34 }, { wch: 18 }, { wch: 18 },
     { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 },
     { wch: 16 }, { wch: 16 }, { wch: 14 }, { wch: 30 },
   ];
+  ws['!rows'] = levels.map(level => (level > 0 ? { level } : {}));
+  ws['!outline'] = { above: true };
+
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Учётные данные');
   const stamp = new Date().toISOString().slice(0, 10);
   XLSX.writeFile(wb, `Учётные данные ${stamp}.xlsx`);
-  toast.success('Файл сформирован');
+  toast.success('Файл сформирован — разделы можно сворачивать');
 }
 
 function HighlightText({ text, query }: { text: string; query: string }) {
