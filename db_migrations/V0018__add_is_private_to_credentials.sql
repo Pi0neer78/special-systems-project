@@ -1,0 +1,2 @@
+ALTER TABLE t_p34673685_special_systems_proj.credentials
+  ADD COLUMN IF NOT EXISTS is_private BOOLEAN NOT NULL DEFAULT FALSE;

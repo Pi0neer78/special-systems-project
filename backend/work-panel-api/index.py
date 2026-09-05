@@ -202,28 +202,37 @@ def handler(event: dict, context) -> dict:
                     if folder_id:
                         if caller['role'] != 'admin' and is_folder_hidden(conn, folder_id):
                             return err('Раздел недоступен', 403)
-                        cur.execute(f"""
-                            SELECT id, folder_id, name, login, password,
-                                   login1, password1, login2, password2,
-                                   login3, password3, ip, notes
-                            FROM {SCHEMA}.credentials WHERE folder_id=%s AND is_files_container=FALSE ORDER BY name
-                        """, [folder_id])
+                        if caller['role'] == 'admin':
+                            cur.execute(f"""
+                                SELECT id, folder_id, name, login, password,
+                                       login1, password1, login2, password2,
+                                       login3, password3, ip, notes, is_private
+                                FROM {SCHEMA}.credentials WHERE folder_id=%s AND is_files_container=FALSE ORDER BY name
+                            """, [folder_id])
+                        else:
+                            cur.execute(f"""
+                                SELECT id, folder_id, name, login, password,
+                                       login1, password1, login2, password2,
+                                       login3, password3, ip, notes, is_private
+                                FROM {SCHEMA}.credentials
+                                WHERE folder_id=%s AND is_files_container=FALSE AND is_private=FALSE ORDER BY name
+                            """, [folder_id])
                         return ok([dict(r) for r in cur.fetchall()])
                     if caller['role'] == 'admin':
                         cur.execute(f"""
                             SELECT id, folder_id, name, login, password,
                                    login1, password1, login2, password2,
-                                   login3, password3, ip, notes
+                                   login3, password3, ip, notes, is_private
                             FROM {SCHEMA}.credentials WHERE is_files_container=FALSE ORDER BY name
                         """)
                     else:
                         cur.execute(f"""
                             SELECT c.id, c.folder_id, c.name, c.login, c.password,
                                    c.login1, c.password1, c.login2, c.password2,
-                                   c.login3, c.password3, c.ip, c.notes
+                                   c.login3, c.password3, c.ip, c.notes, c.is_private
                             FROM {SCHEMA}.credentials c
                             LEFT JOIN {SCHEMA}.credential_folders f ON f.id = c.folder_id
-                            WHERE c.is_files_container=FALSE
+                            WHERE c.is_files_container=FALSE AND c.is_private=FALSE
                               AND (c.folder_id IS NULL OR NOT EXISTS (
                                 WITH RECURSIVE chain AS (
                                     SELECT id, parent_id, is_private FROM {SCHEMA}.credential_folders WHERE id = c.folder_id
@@ -246,7 +255,7 @@ def handler(event: dict, context) -> dict:
                         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         RETURNING id, folder_id, name, login, password,
                                   login1, password1, login2, password2,
-                                  login3, password3, ip, notes
+                                  login3, password3, ip, notes, is_private
                     """, (
                         body.get('folder_id'), body.get('name', ''),
                         body.get('login'), body.get('password'),
@@ -262,35 +271,51 @@ def handler(event: dict, context) -> dict:
                     cur.execute(f"""
                         SELECT id, folder_id, name, login, password,
                                login1, password1, login2, password2,
-                               login3, password3, ip, notes
+                               login3, password3, ip, notes, is_private
                         FROM {SCHEMA}.credentials WHERE id=%s
                     """, [rid])
                     row = cur.fetchone()
                     if not row:
                         return err('Not found', 404)
-                    if caller['role'] != 'admin' and is_folder_hidden(conn, row['folder_id']):
+                    if caller['role'] != 'admin' and (row['is_private'] or is_folder_hidden(conn, row['folder_id'])):
                         return err('Раздел недоступен', 403)
                     return ok(dict(row))
                 if method == 'PUT':
-                    cur.execute(f"""
-                        UPDATE {SCHEMA}.credentials SET
-                          folder_id=%s, name=%s, login=%s, password=%s,
-                          login1=%s, password1=%s,
-                          login2=%s, password2=%s, login3=%s, password3=%s,
-                          ip=%s, notes=%s, updated_at=NOW()
-                        WHERE id=%s
-                        RETURNING id, folder_id, name, login, password,
-                                  login1, password1, login2, password2,
-                                  login3, password3, ip, notes
-                    """, (
-                        body.get('folder_id'), body.get('name', ''),
-                        body.get('login'), body.get('password'),
-                        body.get('login1'), body.get('password1'),
-                        body.get('login2'), body.get('password2'),
-                        body.get('login3'), body.get('password3'),
-                        body.get('ip'), body.get('notes'),
-                        rid
-                    ))
+                    if 'is_private' in body and caller['role'] != 'admin':
+                        return err('Только администратор может менять приватность записи', 403)
+                    is_private_only = set(body.keys()) <= {'is_private'}
+                    if is_private_only:
+                        cur.execute(f"""
+                            UPDATE {SCHEMA}.credentials SET is_private=%s, updated_at=NOW()
+                            WHERE id=%s
+                            RETURNING id, folder_id, name, login, password,
+                                      login1, password1, login2, password2,
+                                      login3, password3, ip, notes, is_private
+                        """, (bool(body['is_private']), rid))
+                    else:
+                        is_private_val = bool(body['is_private']) if 'is_private' in body else None
+                        cur.execute(f"""
+                            UPDATE {SCHEMA}.credentials SET
+                              folder_id=%s, name=%s, login=%s, password=%s,
+                              login1=%s, password1=%s,
+                              login2=%s, password2=%s, login3=%s, password3=%s,
+                              ip=%s, notes=%s,
+                              is_private=COALESCE(%s, is_private),
+                              updated_at=NOW()
+                            WHERE id=%s
+                            RETURNING id, folder_id, name, login, password,
+                                      login1, password1, login2, password2,
+                                      login3, password3, ip, notes, is_private
+                        """, (
+                            body.get('folder_id'), body.get('name', ''),
+                            body.get('login'), body.get('password'),
+                            body.get('login1'), body.get('password1'),
+                            body.get('login2'), body.get('password2'),
+                            body.get('login3'), body.get('password3'),
+                            body.get('ip'), body.get('notes'),
+                            is_private_val,
+                            rid
+                        ))
                     conn.commit()
                     row = cur.fetchone()
                     return ok(dict(row)) if row else err('Not found', 404)

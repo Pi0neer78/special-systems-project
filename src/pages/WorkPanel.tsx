@@ -44,6 +44,7 @@ interface Credential {
   login: string; password: string;
   login1: string; password1: string; login2: string; password2: string;
   login3: string; password3: string; ip: string; notes: string;
+  is_private?: boolean;
 }
 interface CredFile {
   id: number; credential_id: number; file_name: string; file_url: string;
@@ -416,12 +417,14 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
   const [dirty, setDirty] = useState(false);
   const [filter, setFilter] = useState('');
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; folder: Folder } | null>(null);
+  const [credCtxMenu, setCredCtxMenu] = useState<{ x: number; y: number; cred: Credential } | null>(null);
   const [modal, setModal] = useState<{ type: 'rename' | 'create' | 'move' | 'delete-folder'; folder?: Folder } | null>(null);
   const [modalVal, setModalVal] = useState('');
   const [moveTo, setMoveTo] = useState<string>('');
   const [deletingFolder, setDeletingFolder] = useState(false);
   const [exporting, setExporting] = useState(false);
   const ctxRef = useRef<HTMLDivElement>(null);
+  const credCtxRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isResizing = useRef(false);
 
@@ -481,7 +484,10 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
   }, [selectedFolder]);
 
   useEffect(() => {
-    const close = (e: MouseEvent) => { if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null); };
+    const close = (e: MouseEvent) => {
+      if (ctxRef.current && !ctxRef.current.contains(e.target as Node)) setCtxMenu(null);
+      if (credCtxRef.current && !credCtxRef.current.contains(e.target as Node)) setCredCtxMenu(null);
+    };
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, []);
@@ -556,6 +562,13 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
     await api(`resource=folders&id=${folder.id}`, 'PUT', { is_private: !folder.is_private });
     toast.success(!folder.is_private ? 'Раздел стал приватным' : 'Раздел снова доступен всем');
     loadFolders();
+  };
+
+  const togglePrivateCred = async (cred: Credential) => {
+    setCredCtxMenu(null);
+    await api(`resource=credentials&id=${cred.id}`, 'PUT', { is_private: !cred.is_private });
+    toast.success(!cred.is_private ? 'Запись стала приватной' : 'Запись снова доступна всем');
+    if (selectedFolder !== null) loadCreds(selectedFolder);
   };
 
   const doDeleteFolder = async () => {
@@ -660,6 +673,17 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
         </div>
       )}
 
+      {/* Контекстное меню записи */}
+      {credCtxMenu && (
+        <div ref={credCtxRef} className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[180px]"
+          style={{ top: credCtxMenu.y, left: credCtxMenu.x }}>
+          <button className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-secondary/60 text-left" onClick={() => togglePrivateCred(credCtxMenu.cred)}>
+            <Icon name="Lock" size={13} />
+            {credCtxMenu.cred.is_private ? 'Сделать общей' : 'Сделать приватной'}
+          </button>
+        </div>
+      )}
+
       {/* Правая панель — учётные данные */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {selectedFolder !== null ? (
@@ -667,8 +691,11 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
             {/* Список записей */}
             <div className="border-b border-border p-2 flex gap-2 items-center flex-wrap">
               {creds.map(c => (
-                <div key={c.id} className={`group flex items-center rounded text-sm transition-colors ${selectedCred?.id === c.id ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 hover:bg-secondary border border-border'}`}>
-                  <button onClick={() => selectCred(c)} className="pl-3 pr-1.5 py-1">
+                <div key={c.id}
+                  onContextMenu={e => { e.preventDefault(); if (isAdmin) setCredCtxMenu({ x: e.clientX, y: e.clientY, cred: c }); }}
+                  className={`group flex items-center rounded text-sm transition-colors ${selectedCred?.id === c.id ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 hover:bg-secondary border border-border'}`}>
+                  <button onClick={() => selectCred(c)} className="pl-3 pr-1.5 py-1 flex items-center gap-1.5">
+                    {c.is_private && <Icon name="Lock" size={11} className={selectedCred?.id === c.id ? '' : 'text-amber-500'} />}
                     {c.name || '(без названия)'}
                   </button>
                   <button onClick={() => setConfirmDeleteCred(c)} title="Удалить запись"
