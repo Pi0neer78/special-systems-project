@@ -38,7 +38,7 @@ async function api(qs: string, method = 'GET', body?: object) {
 // TYPES
 // ══════════════════════════════════════════════════════════════════════════════
 
-interface Folder { id: number; parent_id: number | null; name: string; sort_order: number; }
+interface Folder { id: number; parent_id: number | null; name: string; sort_order: number; is_private?: boolean; }
 interface Credential {
   id: number; folder_id: number | null; name: string;
   login: string; password: string;
@@ -386,7 +386,11 @@ function FolderNode({
           ? <Icon name={effectiveOpen ? 'ChevronDown' : 'ChevronRight'} size={12} className="text-muted-foreground shrink-0" />
           : <span className="w-3 shrink-0" />
         }
-        <Icon name={isRoot ? 'Database' : 'Folder'} size={13} className={selectedId === folder.id ? 'text-primary' : 'text-muted-foreground'} />
+        <Icon
+          name={folder.is_private ? 'FolderLock' : isRoot ? 'Database' : 'Folder'}
+          size={13}
+          className={folder.is_private ? 'text-amber-500' : selectedId === folder.id ? 'text-primary' : 'text-muted-foreground'}
+        />
         <span className="text-sm truncate"><HighlightText text={folder.name} query={highlight || ''} /></span>
       </div>
       {effectiveOpen && children.map(ch => (
@@ -400,7 +404,7 @@ function FolderNode({
 const PANEL_WIDTH_KEY = 'wp_cred_panel_width';
 const DEFAULT_PANEL_W = 30;
 
-function CredentialsSection() {
+function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
   const [creds, setCreds] = useState<Credential[]>([]);
@@ -547,6 +551,13 @@ function CredentialsSection() {
     setModal(null); loadFolders();
   };
 
+  const togglePrivate = async (folder: Folder) => {
+    setCtxMenu(null);
+    await api(`resource=folders&id=${folder.id}`, 'PUT', { is_private: !folder.is_private });
+    toast.success(!folder.is_private ? 'Раздел стал приватным' : 'Раздел снова доступен всем');
+    loadFolders();
+  };
+
   const doDeleteFolder = async () => {
     if (!modal?.folder) return;
     setDeletingFolder(true);
@@ -636,6 +647,12 @@ function CredentialsSection() {
           <button className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-secondary/60 text-left" onClick={() => { setMoveTo(''); setModal({ type: 'move', folder: ctxMenu.folder }); setCtxMenu(null); }}>
             <Icon name="FolderSymlink" size={13} /> Переместить
           </button>
+          {isAdmin && (
+            <button className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-secondary/60 text-left" onClick={() => togglePrivate(ctxMenu.folder)}>
+              <Icon name="FolderLock" size={13} />
+              {ctxMenu.folder.is_private ? 'Сделать общим' : 'Сделать приватным'}
+            </button>
+          )}
           <div className="h-px bg-border my-1" />
           <button className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-destructive/10 text-destructive text-left" onClick={() => { setModal({ type: 'delete-folder', folder: ctxMenu.folder }); setCtxMenu(null); }}>
             <Icon name="Trash2" size={13} /> Удалить раздел
@@ -2998,7 +3015,7 @@ export default function WorkPanel() {
       </header>
 
       <main className="flex-1 overflow-hidden relative z-10">
-        {tab === 'credentials' && <CredentialsSection />}
+        {tab === 'credentials' && <CredentialsSection isAdmin={authInfo.role === 'admin'} />}
         {tab === 'updates' && (
           <div className="container py-6">
             <UpdatesSection />

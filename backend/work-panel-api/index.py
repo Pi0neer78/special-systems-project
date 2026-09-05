@@ -57,6 +57,26 @@ def get_conn():
     return psycopg2.connect(os.environ['DATABASE_URL'])
 
 
+def is_folder_hidden(conn, folder_id) -> bool:
+    """Проверяет, скрыт ли раздел (сам приватный или один из родителей приватный)."""
+    if not folder_id:
+        return False
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute(f"""
+        WITH RECURSIVE chain AS (
+            SELECT id, parent_id, is_private FROM {SCHEMA}.credential_folders WHERE id=%s
+            UNION ALL
+            SELECT f.id, f.parent_id, f.is_private
+            FROM {SCHEMA}.credential_folders f
+            JOIN chain c ON f.id = c.parent_id
+        )
+        SELECT bool_or(is_private) AS hidden FROM chain
+    """, [folder_id])
+    row = cur.fetchone()
+    cur.close()
+    return bool(row and row['hidden'])
+
+
 def decode_token(token: str, conn) -> dict:
     """Декодирует токен, возвращает {'role': ..., 'user_id': ..., 'login': ...} или None."""
     cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -103,15 +123,28 @@ def handler(event: dict, context) -> dict:
             if not rid:
                 if method == 'GET':
                     cur.execute(f"""
-                        SELECT id, parent_id, name, sort_order
+                        SELECT id, parent_id, name, sort_order, is_private
                         FROM {SCHEMA}.credential_folders
                         ORDER BY COALESCE(parent_id, 0), sort_order, name
                     """)
-                    return ok([dict(r) for r in cur.fetchall()])
+                    rows = [dict(r) for r in cur.fetchall()]
+                    if caller['role'] != 'admin':
+                        by_id = {r['id']: r for r in rows}
+
+                        def is_hidden(r):
+                            cur_r = r
+                            while cur_r:
+                                if cur_r['is_private']:
+                                    return True
+                                cur_r = by_id.get(cur_r['parent_id']) if cur_r['parent_id'] is not None else None
+                            return False
+
+                        rows = [r for r in rows if not is_hidden(r)]
+                    return ok(rows)
                 if method == 'POST':
                     cur.execute(f"""
                         INSERT INTO {SCHEMA}.credential_folders (parent_id, name, sort_order)
-                        VALUES (%s, %s, %s) RETURNING id, parent_id, name, sort_order
+                        VALUES (%s, %s, %s) RETURNING id, parent_id, name, sort_order, is_private
                     """, (body.get('parent_id'), body.get('name', 'Новый раздел'), body.get('sort_order', 0)))
                     conn.commit()
                     return ok(dict(cur.fetchone()))
@@ -124,9 +157,13 @@ def handler(event: dict, context) -> dict:
                         fields.append('parent_id=%s'); vals.append(body['parent_id'])
                     if 'sort_order' in body:
                         fields.append('sort_order=%s'); vals.append(body['sort_order'])
+                    if 'is_private' in body:
+                        if caller['role'] != 'admin':
+                            return err('Только администратор может менять приватность раздела', 403)
+                        fields.append('is_private=%s'); vals.append(bool(body['is_private']))
                     fields.append('updated_at=NOW()')
                     vals.append(rid)
-                    cur.execute(f"UPDATE {SCHEMA}.credential_folders SET {', '.join(fields)} WHERE id=%s RETURNING id, parent_id, name, sort_order", vals)
+                    cur.execute(f"UPDATE {SCHEMA}.credential_folders SET {', '.join(fields)} WHERE id=%s RETURNING id, parent_id, name, sort_order, is_private", vals)
                     conn.commit()
                     row = cur.fetchone()
                     return ok(dict(row)) if row else err('Not found', 404)
@@ -163,18 +200,41 @@ def handler(event: dict, context) -> dict:
                 if method == 'GET':
                     folder_id = qs.get('folder_id', '')
                     if folder_id:
+                        if caller['role'] != 'admin' and is_folder_hidden(conn, folder_id):
+                            return err('Раздел недоступен', 403)
                         cur.execute(f"""
                             SELECT id, folder_id, name, login, password,
                                    login1, password1, login2, password2,
                                    login3, password3, ip, notes
                             FROM {SCHEMA}.credentials WHERE folder_id=%s AND is_files_container=FALSE ORDER BY name
                         """, [folder_id])
-                    else:
+                        return ok([dict(r) for r in cur.fetchall()])
+                    if caller['role'] == 'admin':
                         cur.execute(f"""
                             SELECT id, folder_id, name, login, password,
                                    login1, password1, login2, password2,
                                    login3, password3, ip, notes
                             FROM {SCHEMA}.credentials WHERE is_files_container=FALSE ORDER BY name
+                        """)
+                    else:
+                        cur.execute(f"""
+                            SELECT c.id, c.folder_id, c.name, c.login, c.password,
+                                   c.login1, c.password1, c.login2, c.password2,
+                                   c.login3, c.password3, c.ip, c.notes
+                            FROM {SCHEMA}.credentials c
+                            LEFT JOIN {SCHEMA}.credential_folders f ON f.id = c.folder_id
+                            WHERE c.is_files_container=FALSE
+                              AND (c.folder_id IS NULL OR NOT EXISTS (
+                                WITH RECURSIVE chain AS (
+                                    SELECT id, parent_id, is_private FROM {SCHEMA}.credential_folders WHERE id = c.folder_id
+                                    UNION ALL
+                                    SELECT ff.id, ff.parent_id, ff.is_private
+                                    FROM {SCHEMA}.credential_folders ff
+                                    JOIN chain ch ON ff.id = ch.parent_id
+                                )
+                                SELECT 1 FROM chain WHERE is_private
+                              ))
+                            ORDER BY c.name
                         """)
                     return ok([dict(r) for r in cur.fetchall()])
                 if method == 'POST':
@@ -206,7 +266,11 @@ def handler(event: dict, context) -> dict:
                         FROM {SCHEMA}.credentials WHERE id=%s
                     """, [rid])
                     row = cur.fetchone()
-                    return ok(dict(row)) if row else err('Not found', 404)
+                    if not row:
+                        return err('Not found', 404)
+                    if caller['role'] != 'admin' and is_folder_hidden(conn, row['folder_id']):
+                        return err('Раздел недоступен', 403)
+                    return ok(dict(row))
                 if method == 'PUT':
                     cur.execute(f"""
                         UPDATE {SCHEMA}.credentials SET
@@ -252,6 +316,8 @@ def handler(event: dict, context) -> dict:
                 folder_id = qs.get('folder_id', '')
                 if not folder_id:
                     return err('folder_id required')
+                if caller['role'] != 'admin' and is_folder_hidden(conn, folder_id):
+                    return err('Раздел недоступен', 403)
                 cur.execute(f"""
                     SELECT id, folder_id, name FROM {SCHEMA}.credentials
                     WHERE folder_id=%s AND is_files_container=TRUE
