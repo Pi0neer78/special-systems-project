@@ -303,7 +303,8 @@ async function exportCredentialsToExcel() {
     const children = buildTree(folders, parentId);
     for (const folder of children) {
       const indent = '   '.repeat(depth);
-      aoa.push([`${indent}${folder.name}`, '', '', '', '', '', '', '', '', '', '']);
+      const folderLabel = folder.is_private ? `🔒 ${folder.name} (Приватный)` : folder.name;
+      aoa.push([`${indent}${folderLabel}`, '', '', '', '', '', '', '', '', '', '']);
       levels.push(Math.min(depth, XLSX_MAX_OUTLINE));
 
       const folderCreds = creds
@@ -311,8 +312,9 @@ async function exportCredentialsToExcel() {
         .sort((a, b) => a.name.localeCompare(b.name));
       const childIndent = '   '.repeat(depth + 1);
       for (const c of folderCreds) {
+        const credLabel = c.is_private ? `🔒 ${c.name || ''} (Приватная)` : (c.name || '');
         aoa.push([
-          `${childIndent}${c.name || ''}`,
+          `${childIndent}${credLabel}`,
           c.login || '', c.password || '',
           c.login1 || '', c.password1 || '',
           c.login2 || '', c.password2 || '',
