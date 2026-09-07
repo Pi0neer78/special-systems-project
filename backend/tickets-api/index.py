@@ -373,14 +373,26 @@ def handler(event: dict, context) -> dict:
                 return resp(404, {'error': 'Заявка не найдена'})
             return resp(200, ticket)
 
-        # ── POST создать заявку (только клиент) ──────────────────────────────
+        # ── POST создать заявку (клиент — от своего имени; админ — от имени клиента) ──
         # POST ?resource=tickets
-        # Body: { priority, problem_type, description, deadline?, extra_info? }
+        # Body (клиент): { priority, problem_type, description, deadline?, extra_info? }
+        # Body (админ):  { client_id, priority, problem_type, description, deadline?, extra_info? }
         # Response: { id, ... } — созданная заявка
         if method == 'POST':
-            if not is_client:
-                return resp(403, {'error': 'Только клиент может подавать заявки'})
             body = json.loads(event.get('body') or '{}')
+            if is_client:
+                target_client_id = client_id_from_token
+            elif is_staff and admin_role == 'admin':
+                target_client_id = body.get('client_id')
+                if not target_client_id:
+                    return resp(400, {'error': 'Укажите клиента'})
+                cur.execute(f"SELECT id FROM {SCHEMA}.clients WHERE id = %s AND is_active = TRUE", (target_client_id,))
+                if not cur.fetchone():
+                    cur.close(); conn.close()
+                    return resp(400, {'error': 'Клиент не найден'})
+            else:
+                return resp(403, {'error': 'Недостаточно прав для создания заявки'})
+
             priority = body.get('priority', 'medium')
             problem_type = body.get('problem_type', '')
             description = body.get('description', '').strip()
@@ -393,7 +405,7 @@ def handler(event: dict, context) -> dict:
                   (client_id, priority, problem_type, description, deadline, extra_info, status, status_changed_at)
                 VALUES (%s, %s, %s, %s, %s, %s, 'new', now())
                 RETURNING *
-            """, (client_id_from_token, priority, problem_type, description, deadline, extra_info))
+            """, (target_client_id, priority, problem_type, description, deadline, extra_info))
             ticket = cur.fetchone()
             conn.commit()
             cur.close()

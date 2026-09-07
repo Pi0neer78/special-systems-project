@@ -1380,6 +1380,9 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
   const [deleting, setDeleting] = useState(false);
   const [detailModal, setDetailModal] = useState<Ticket | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Ticket | null>(null);
+  const [createModal, setCreateModal] = useState(false);
+  const [createForm, setCreateForm] = useState({ client_id: '', priority: 'medium', problem_type: '', description: '', deadline: '', extra_info: '' });
+  const [creating, setCreating] = useState(false);
 
   const apiHeaders = { 'X-Admin-Token': token };
 
@@ -1457,6 +1460,39 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     load();
   };
 
+  const openCreate = () => {
+    setCreateForm({ client_id: '', priority: 'medium', problem_type: '', description: '', deadline: '', extra_info: '' });
+    setCreateModal(true);
+  };
+
+  const createTicket = async () => {
+    if (!createForm.client_id || !createForm.problem_type || !createForm.description.trim()) {
+      toast.error('Заполните клиента, тип и описание заявки');
+      return;
+    }
+    setCreating(true);
+    const res = await fetch(`${TICKETS_URL}?resource=tickets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({
+        client_id: Number(createForm.client_id),
+        priority: createForm.priority,
+        problem_type: createForm.problem_type,
+        description: createForm.description.trim(),
+        deadline: createForm.deadline || undefined,
+        extra_info: createForm.extra_info.trim() || undefined,
+      }),
+    }).then(r => r.json());
+    setCreating(false);
+    if (res.id) {
+      toast.success('Заявка создана');
+      setCreateModal(false);
+      load();
+    } else {
+      toast.error(res.error || 'Не удалось создать заявку');
+    }
+  };
+
   return (
     <div>
       {/* Фильтры */}
@@ -1499,6 +1535,11 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
             <Icon name="Columns3" size={13} />
           </button>
         </div>
+        {isAdmin && (
+          <Button size="sm" onClick={openCreate} className="h-8 bg-primary text-primary-foreground hover:bg-primary/90">
+            <Icon name="Plus" size={14} className="mr-1" /> Новая заявка
+          </Button>
+        )}
         <span className="ml-auto text-xs text-muted-foreground self-center">{tickets.length} заявок</span>
       </div>
 
@@ -1822,6 +1863,63 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
             <Button disabled={deleting} onClick={deleteTicket} className="flex-1 bg-destructive text-destructive-foreground hover:bg-destructive/90">
               {deleting ? 'Удаление...' : 'Удалить'}
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Создание заявки от имени клиента (только админ) */}
+      <Dialog open={createModal} onOpenChange={setCreateModal}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase tracking-wide">Новая заявка от клиента</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 text-sm">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Клиент</label>
+              <select value={createForm.client_id} onChange={e => setCreateForm(f => ({ ...f, client_id: e.target.value }))}
+                className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                <option value="">— выберите клиента —</option>
+                {meta?.clients.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+              </select>
+            </div>
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <label className="text-xs text-muted-foreground mb-1 block">Тип проблемы</label>
+                <select value={createForm.problem_type} onChange={e => setCreateForm(f => ({ ...f, problem_type: e.target.value }))}
+                  className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                  <option value="">— выберите тип —</option>
+                  {PROBLEM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="flex-1">
+                <label className="text-xs text-muted-foreground mb-1 block">Приоритет</label>
+                <select value={createForm.priority} onChange={e => setCreateForm(f => ({ ...f, priority: e.target.value }))}
+                  className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                  {Object.entries(PRIORITY_LABELS).map(([val, p]) => <option key={val} value={val}>{p.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Описание</label>
+              <Textarea value={createForm.description} onChange={e => setCreateForm(f => ({ ...f, description: e.target.value }))}
+                rows={4} className="bg-secondary/40 border-border resize-none text-sm" placeholder="Опишите суть заявки..." />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Срок решения (необязательно)</label>
+              <Input type="datetime-local" value={createForm.deadline} onChange={e => setCreateForm(f => ({ ...f, deadline: e.target.value }))}
+                className="bg-secondary/40 border-border h-9 text-sm" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Доп. информация (необязательно)</label>
+              <Textarea value={createForm.extra_info} onChange={e => setCreateForm(f => ({ ...f, extra_info: e.target.value }))}
+                rows={2} className="bg-secondary/40 border-border resize-none text-sm" />
+            </div>
+            <div className="flex gap-3 pt-1">
+              <Button variant="outline" onClick={() => setCreateModal(false)} className="flex-1">Отмена</Button>
+              <Button disabled={creating} onClick={createTicket} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90">
+                {creating ? 'Создание...' : 'Создать заявку'}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
