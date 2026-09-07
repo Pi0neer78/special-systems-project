@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { UsersSection, ClientsSection, DatabasesSection, api as adminApi } from '@/pages/Admin';
 
 
 const AUTH_URL = 'https://functions.poehali.dev/115d85ec-a990-4455-824d-27487ad441c1';
@@ -3068,11 +3069,21 @@ function NewClientMessageNotifier({ token }: { token: string }) {
 // MAIN
 // ══════════════════════════════════════════════════════════════════════════════
 
-type Tab = 'credentials' | 'updates' | 'tickets' | 'tasks';
+type Tab = 'credentials' | 'updates' | 'tickets' | 'tasks' | 'admin-users' | 'admin-clients' | 'admin-databases';
+
+const ADMIN_TABS: { id: Tab; label: string; icon: string }[] = [
+  { id: 'admin-users', label: 'Пользователи', icon: 'Users' },
+  { id: 'admin-clients', label: 'Клиенты', icon: 'Building2' },
+  { id: 'admin-databases', label: 'Базы данных', icon: 'Database' },
+];
 
 export default function WorkPanel() {
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [tab, setTab] = useState<Tab>('credentials');
+  const [adminMenuOpen, setAdminMenuOpen] = useState(false);
+  const [configDbs, setConfigDbs] = useState<import('@/pages/Admin').ConfigDB[]>([]);
+  const [allClients, setAllClients] = useState<{ id: number; name: string }[]>([]);
+  const adminMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
@@ -3083,9 +3094,24 @@ export default function WorkPanel() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    if (!authInfo || authInfo.role !== 'admin') return;
+    adminApi('resource=databases').then(d => { if (Array.isArray(d)) setConfigDbs(d); });
+    adminApi('resource=clients').then(d => {
+      if (Array.isArray(d)) setAllClients(d.map((c: { id: number; name: string }) => ({ id: c.id, name: c.name })));
+    });
+  }, [authInfo]);
+
+  useEffect(() => {
+    const close = (e: MouseEvent) => { if (adminMenuRef.current && !adminMenuRef.current.contains(e.target as Node)) setAdminMenuOpen(false); };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, []);
+
   const logout = () => { localStorage.removeItem(TOKEN_KEY); setAuthInfo(null); };
 
   if (!authInfo) return <WorkLogin onLogin={setAuthInfo} />;
+  const isAdminRole = authInfo.role === 'admin';
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'credentials', label: 'Учётные данные', icon: 'Lock' },
@@ -3125,14 +3151,34 @@ export default function WorkPanel() {
                 <span className="hidden sm:inline">{t.label}</span>
               </button>
             ))}
+            {isAdminRole && (
+              <div className="relative" ref={adminMenuRef}>
+                <button onClick={() => setAdminMenuOpen(o => !o)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm transition-all ${
+                    ADMIN_TABS.some(t => t.id === tab) ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                  }`}
+                  title="Администрирование">
+                  <Icon name="Menu" size={16} />
+                </button>
+                {adminMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[190px]">
+                    {ADMIN_TABS.map(t => (
+                      <button key={t.id} onClick={() => { setTab(t.id); setAdminMenuOpen(false); }}
+                        className={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left transition-colors ${
+                          tab === t.id ? 'text-primary bg-primary/10' : 'hover:bg-secondary/60'
+                        }`}>
+                        <Icon name={t.icon} size={14} />
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
             <div className="ml-2 flex items-center gap-2 text-xs text-muted-foreground">
               <Icon name="User" size={13} />
               <span className="hidden sm:inline">{authInfo.full_name || authInfo.login}</span>
             </div>
-            <a href="/admin?from=work-panel" className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-all" title="Перейти в панель администратора">
-              <Icon name="ShieldCheck" size={14} />
-              <span className="hidden sm:inline">Админ</span>
-            </a>
             <ThemeToggle />
             <button onClick={logout} className="text-muted-foreground hover:text-destructive transition-colors p-1.5" title="Выйти">
               <Icon name="LogOut" size={16} />
@@ -3156,6 +3202,21 @@ export default function WorkPanel() {
         {tab === 'tasks' && (
           <div className="container py-6">
             <TasksSection token={localStorage.getItem(TOKEN_KEY) || ''} />
+          </div>
+        )}
+        {tab === 'admin-users' && isAdminRole && (
+          <div className="container py-6">
+            <UsersSection allClients={allClients} />
+          </div>
+        )}
+        {tab === 'admin-clients' && isAdminRole && (
+          <div className="container py-6">
+            <ClientsSection configDbs={configDbs} onClientsChanged={d => setAllClients(d.map(c => ({ id: c.id, name: c.name })))} />
+          </div>
+        )}
+        {tab === 'admin-databases' && isAdminRole && (
+          <div className="container py-6">
+            <DatabasesSection onLoaded={setConfigDbs} />
           </div>
         )}
       </main>

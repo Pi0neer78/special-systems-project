@@ -20,7 +20,7 @@ const TOKEN_KEY = 'admin_token';
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 // Маршрутинг через query-параметры: ?resource=users&id=1&sub=db&subid=2
-function api(qs: string, method = 'GET', body?: object) {
+export function api(qs: string, method = 'GET', body?: object) {
   const token = localStorage.getItem(TOKEN_KEY) || '';
   return fetch(`${API_URL}?${qs}`, {
     method,
@@ -73,7 +73,7 @@ function Switch({ checked, onChange }: { checked: boolean; onChange: (v: boolean
 // ══════════════════════════════════════════════════════════════════════════════
 
 type UserClient = { client_id: number; client_name: string };
-type User = { id: number; login: string; full_name: string; is_active: boolean; phone: string; description: string; clients: UserClient[]; has_key?: boolean };
+export type User = { id: number; login: string; full_name: string; is_active: boolean; phone: string; description: string; clients: UserClient[]; has_key?: boolean };
 
 // Панель привязки клиентов к пользователю
 function UserClientsPanel({ user, allClients, onChanged }: {
@@ -214,7 +214,7 @@ function UserPrintView({ user }: { user: User }) {
   );
 }
 
-function UsersSection({ allClients }: { allClients: { id: number; name: string }[] }) {
+export function UsersSection({ allClients }: { allClients: { id: number; name: string }[] }) {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -460,7 +460,7 @@ function UsersSection({ allClients }: { allClients: { id: number; name: string }
 // DATABASES SECTION
 // ══════════════════════════════════════════════════════════════════════════════
 
-type ConfigDB = { id: number; config_name: string; min_platform_version: string; actual_config_version: string; update_release_date: string; rs_code: string | null };
+export type ConfigDB = { id: number; config_name: string; min_platform_version: string; actual_config_version: string; update_release_date: string; rs_code: string | null };
 
 const RS_CODE_OPTIONS = [
   { value: 'Accounting', label: 'Бухгалтерия предприятия, ред. 3.0' },
@@ -475,7 +475,7 @@ const RS_CODE_OPTIONS = [
 
 type CheckResult = { id: number; config_name: string; current?: string | null; latest?: string; latest_date?: string; has_update?: boolean; error?: string };
 
-function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }) {
+export function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) => void }) {
   const [dbs, setDbs] = useState<ConfigDB[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -759,7 +759,7 @@ type DbType = 'file' | 'server' | 'http';
 const DB_TYPE_LABELS: Record<DbType, string> = { file: 'Файловая', server: 'Серверная', http: 'HTTP' };
 const DB_TYPE_ICONS: Record<DbType, string> = { file: 'HardDrive', server: 'Server', http: 'Globe' };
 type ClientDB = { id: number; client_id: number; config_database_id: number; config_name: string; comment?: string; db_type?: DbType; current_config_version: string; update_date: string };
-type Client = {
+export type Client = {
   id: number; parent_id: number | null; parent_name: string | null; name: string;
   login: string; password_plain?: string | null; is_active: boolean; inn: string; address: string;
   director_name: string; director_phone: string; director_email: string;
@@ -925,7 +925,7 @@ const emptyClient = {
   contact_name: '', contact_phone: '', contact_email: '',
 };
 
-function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]; onClientsChanged?: (clients: Client[]) => void }) {
+export function ClientsSection({ configDbs, onClientsChanged }: { configDbs: ConfigDB[]; onClientsChanged?: (clients: Client[]) => void }) {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
