@@ -5,6 +5,8 @@ import hmac
 import time
 import uuid
 import base64
+import urllib.request
+import urllib.error
 import psycopg2
 import boto3
 from psycopg2.extras import RealDictCursor
@@ -32,6 +34,31 @@ STATUSES = ['new', 'in_progress', 'resolved', 'cancelled']
 
 def get_conn():
     return psycopg2.connect(os.environ['DATABASE_URL'])
+
+
+# ── Push-уведомления в мобильное приложение (Adalo) ──────────────────────────
+# Не блокирует основной ответ API: любая ошибка отправки push молча игнорируется.
+def send_push(assignee_user_id, title: str, body: str, ticket_id: int):
+    app_id = os.environ.get('ADALO_APP_ID')
+    api_key = os.environ.get('ADALO_API_KEY')
+    collection_id = os.environ.get('ADALO_PUSH_COLLECTION_ID')
+    if not app_id or not api_key or not collection_id or not assignee_user_id:
+        return
+    try:
+        url = f"https://api.adalo.com/v0/apps/{app_id}/collections/{collection_id}"
+        payload = json.dumps({
+            'assignee_user_id': assignee_user_id,
+            'title': title,
+            'body': body,
+            'ticket_id': ticket_id,
+        }).encode()
+        req = urllib.request.Request(url, data=payload, method='POST', headers={
+            'Authorization': f'Bearer {api_key}',
+            'Content-Type': 'application/json',
+        })
+        urllib.request.urlopen(req, timeout=4)
+    except Exception:
+        pass
 
 
 S3_BUCKET = 'files'
@@ -146,6 +173,11 @@ def handler(event: dict, context) -> dict:
       GET    ?resource=ticket-messages&ticket_id=N   — переписка по заявке
       POST   ?resource=ticket-messages               — отправить сообщение/файл в переписку
       GET    ?resource=client-messages               — последние сообщения от клиентов (для уведомлений сотрудников)
+
+    Push-уведомления в мобильное приложение (Adalo):
+      При создании заявки, назначении исполнителя и новом сообщении клиента
+      автоматически создаётся запись в коллекции Adalo (см. ADALO_APP_ID,
+      ADALO_API_KEY, ADALO_PUSH_COLLECTION_ID), которая триггерит push сотруднику.
     """
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
@@ -410,6 +442,8 @@ def handler(event: dict, context) -> dict:
             conn.commit()
             cur.close()
             conn.close()
+            # Новая необработанная заявка ещё не назначена — уведомляем администратора (user_id=0)
+            send_push(0, 'Новая заявка', f"{ticket.get('problem_type', '')}: {description[:80]}", ticket['id'])
             return resp(201, ticket)
 
         # ── PATCH изменить заявку (только сотрудник) ─────────────────────────
@@ -490,6 +524,9 @@ def handler(event: dict, context) -> dict:
             conn.close()
             if not ticket:
                 return resp(404, {'error': 'Заявка не найдена'})
+            # Заявку назначили на сотрудника — уведомляем его
+            if 'assignee_id' in body and ticket.get('assignee_id'):
+                send_push(ticket['assignee_id'], 'Вам назначена заявка', ticket.get('problem_type', ''), ticket['id'])
             return resp(200, ticket)
 
         # ── DELETE удалить заявку (только администратор) ─────────────────────
@@ -714,6 +751,14 @@ def handler(event: dict, context) -> dict:
             """, (ticket_id, sender_type, sender_id, sender_name, message, file_url, file_name, file_size, content_type))
             row = cur.fetchone()
             conn.commit()
+
+            # Сообщение от клиента — уведомляем ответственного сотрудника (или админа, если не назначен)
+            if is_client:
+                cur.execute(f"SELECT assignee_id FROM {SCHEMA}.tickets WHERE id=%s", (ticket_id,))
+                t = cur.fetchone()
+                notify_user_id = (t['assignee_id'] if t and t['assignee_id'] is not None else 0)
+                send_push(notify_user_id, f"Сообщение от {sender_name}", message or 'Прикреплён файл', ticket_id)
+
             cur.close()
             conn.close()
             return resp(201, row)
