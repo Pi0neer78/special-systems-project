@@ -319,6 +319,16 @@ def handler(event: dict, context) -> dict:
                     conn.commit()
                     row = cur.fetchone()
                     return ok(dict(row)) if row else err('Not found', 404)
+                if method == 'PATCH':
+                    # Перемещение записи в другой раздел (смена folder_id)
+                    cur.execute(f"""
+                        UPDATE {SCHEMA}.credentials SET folder_id=%s, updated_at=NOW()
+                        WHERE id=%s
+                        RETURNING id, folder_id, name
+                    """, [body.get('folder_id'), rid])
+                    conn.commit()
+                    row = cur.fetchone()
+                    return ok(dict(row)) if row else err('Not found', 404)
                 if method == 'DELETE':
                     cur.execute(f"SELECT is_files_container FROM {SCHEMA}.credentials WHERE id=%s", [rid])
                     row0 = cur.fetchone()

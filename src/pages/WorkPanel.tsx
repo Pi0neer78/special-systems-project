@@ -366,25 +366,32 @@ function HighlightText({ text, query }: { text: string; query: string }) {
 
 function FolderNode({
   folder, folders, selectedId, onSelect, onMenu, depth, forceExpand, highlight,
+  dragActive, dragOverFolderId, onDragOverFolder, onDropCred,
 }: {
   folder: Folder; folders: Folder[]; selectedId: number | null;
   onSelect: (id: number) => void; onMenu: (e: React.MouseEvent, folder: Folder) => void; depth: number;
   forceExpand?: boolean; highlight?: string;
+  dragActive?: boolean; dragOverFolderId?: number | null;
+  onDragOverFolder?: (id: number | null) => void; onDropCred?: (folderId: number) => void;
 }) {
   const isRoot = folder.parent_id === null;
   const [open, setOpen] = useState(isRoot);
   const children = buildTree(folders, folder.id);
   const effectiveOpen = forceExpand || open;
+  const isDropTarget = dragActive && dragOverFolderId === folder.id;
 
   return (
     <div>
       <div
         className={`group flex items-center gap-1 px-2 py-1 rounded cursor-pointer select-none transition-colors ${
-          selectedId === folder.id ? 'bg-primary/20 text-primary' : 'hover:bg-secondary/60'
+          isDropTarget ? 'bg-primary/30 ring-1 ring-primary' : selectedId === folder.id ? 'bg-primary/20 text-primary' : 'hover:bg-secondary/60'
         }`}
         style={{ paddingLeft: `${depth * 12 + 8}px` }}
         onClick={() => { onSelect(folder.id); if (children.length) setOpen(o => !o); }}
         onContextMenu={e => { e.preventDefault(); onMenu(e, folder); }}
+        onDragOver={dragActive ? e => { e.preventDefault(); onDragOverFolder?.(folder.id); } : undefined}
+        onDragLeave={dragActive ? () => onDragOverFolder?.(null) : undefined}
+        onDrop={dragActive ? e => { e.preventDefault(); onDropCred?.(folder.id); } : undefined}
       >
         {children.length > 0
           ? <Icon name={effectiveOpen ? 'ChevronDown' : 'ChevronRight'} size={12} className="text-muted-foreground shrink-0" />
@@ -399,7 +406,8 @@ function FolderNode({
       </div>
       {effectiveOpen && children.map(ch => (
         <FolderNode key={ch.id} folder={ch} folders={folders} selectedId={selectedId}
-          onSelect={onSelect} onMenu={onMenu} depth={depth + 1} forceExpand={forceExpand} highlight={highlight} />
+          onSelect={onSelect} onMenu={onMenu} depth={depth + 1} forceExpand={forceExpand} highlight={highlight}
+          dragActive={dragActive} dragOverFolderId={dragOverFolderId} onDragOverFolder={onDragOverFolder} onDropCred={onDropCred} />
       ))}
     </div>
   );
@@ -421,9 +429,11 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
   const [filter, setFilter] = useState('');
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; folder: Folder } | null>(null);
   const [credCtxMenu, setCredCtxMenu] = useState<{ x: number; y: number; cred: Credential } | null>(null);
-  const [modal, setModal] = useState<{ type: 'rename' | 'create' | 'move' | 'delete-folder'; folder?: Folder } | null>(null);
+  const [modal, setModal] = useState<{ type: 'rename' | 'create' | 'move' | 'delete-folder' | 'move-cred'; folder?: Folder; cred?: Credential } | null>(null);
   const [modalVal, setModalVal] = useState('');
   const [moveTo, setMoveTo] = useState<string>('');
+  const [dragCredId, setDragCredId] = useState<number | null>(null);
+  const [dragOverFolderId, setDragOverFolderId] = useState<number | null>(null);
   const [deletingFolder, setDeletingFolder] = useState(false);
   const [exporting, setExporting] = useState(false);
   const ctxRef = useRef<HTMLDivElement>(null);
@@ -574,6 +584,18 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
     if (selectedFolder !== null) loadCreds(selectedFolder);
   };
 
+  const moveCredToFolder = async (credId: number, targetFolderId: number) => {
+    await api(`resource=credentials&id=${credId}`, 'PATCH', { folder_id: targetFolderId });
+    toast.success('Запись перемещена');
+    if (selectedFolder !== null) loadCreds(selectedFolder);
+  };
+
+  const doMoveCred = async () => {
+    if (!modal?.cred || !moveTo) return;
+    await moveCredToFolder(modal.cred.id, Number(moveTo));
+    setModal(null);
+  };
+
   const doDeleteFolder = async () => {
     if (!modal?.folder) return;
     setDeletingFolder(true);
@@ -630,7 +652,10 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
         <div className="flex-1 overflow-y-auto py-1 relative" onClick={() => setCtxMenu(null)}>
           {rootFolders.map(f => (
             <FolderNode key={f.id} folder={f} folders={filteredFolders} selectedId={selectedFolder}
-              onSelect={setSelectedFolder} onMenu={onMenu} depth={0} forceExpand={!!filter} highlight={filter} />
+              onSelect={setSelectedFolder} onMenu={onMenu} depth={0} forceExpand={!!filter} highlight={filter}
+              dragActive={dragCredId !== null} dragOverFolderId={dragOverFolderId}
+              onDragOverFolder={setDragOverFolderId}
+              onDropCred={folderId => { if (dragCredId !== null) moveCredToFolder(dragCredId, folderId); setDragCredId(null); setDragOverFolderId(null); }} />
           ))}
         </div>
         <div className="p-2 border-t border-border">
@@ -680,6 +705,9 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
       {credCtxMenu && (
         <div ref={credCtxRef} className="fixed z-50 bg-card border border-border rounded-lg shadow-xl py-1 min-w-[180px]"
           style={{ top: credCtxMenu.y, left: credCtxMenu.x }}>
+          <button className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-secondary/60 text-left" onClick={() => { setMoveTo(''); setModal({ type: 'move-cred', cred: credCtxMenu.cred }); setCredCtxMenu(null); }}>
+            <Icon name="FolderSymlink" size={13} /> Переместить в раздел
+          </button>
           <button className="flex items-center gap-2 w-full px-3 py-1.5 text-sm hover:bg-secondary/60 text-left" onClick={() => togglePrivateCred(credCtxMenu.cred)}>
             <Icon name="Lock" size={13} />
             {credCtxMenu.cred.is_private ? 'Сделать общей' : 'Сделать приватной'}
@@ -695,8 +723,11 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
             <div className="border-b border-border p-2 flex gap-2 items-center flex-wrap">
               {creds.map(c => (
                 <div key={c.id}
+                  draggable
+                  onDragStart={e => { setDragCredId(c.id); e.dataTransfer.effectAllowed = 'move'; }}
+                  onDragEnd={() => { setDragCredId(null); setDragOverFolderId(null); }}
                   onContextMenu={e => { e.preventDefault(); if (isAdmin) setCredCtxMenu({ x: e.clientX, y: e.clientY, cred: c }); }}
-                  className={`group flex items-center rounded text-sm transition-colors ${selectedCred?.id === c.id ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 hover:bg-secondary border border-border'}`}>
+                  className={`group flex items-center rounded text-sm transition-colors cursor-grab active:cursor-grabbing ${dragCredId === c.id ? 'opacity-40' : ''} ${selectedCred?.id === c.id ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 hover:bg-secondary border border-border'}`}>
                   <button onClick={() => selectCred(c)} className="pl-3 pr-1.5 py-1 flex items-center gap-1.5">
                     {c.is_private && <Icon name="Lock" size={11} className={selectedCred?.id === c.id ? '' : 'text-amber-500'} />}
                     {c.name || '(без названия)'}
@@ -874,6 +905,24 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
           <div className="flex gap-2 justify-end mt-2">
             <Button variant="outline" onClick={() => setModal(null)}>Отмена</Button>
             <Button onClick={doMove} disabled={!moveTo}>Переместить</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={modal?.type === 'move-cred'} onOpenChange={() => setModal(null)}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader><DialogTitle>Переместить «{modal?.cred?.name || '(без названия)'}»</DialogTitle></DialogHeader>
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {folders.filter(f => f.id !== modal?.cred?.folder_id).map(f => (
+              <label key={f.id} className="flex items-center gap-2 p-2 rounded hover:bg-secondary/50 cursor-pointer">
+                <input type="radio" name="move-cred" value={String(f.id)} checked={moveTo === String(f.id)} onChange={e => setMoveTo(e.target.value)} />
+                <span className="text-sm">{f.name}</span>
+              </label>
+            ))}
+          </div>
+          <div className="flex gap-2 justify-end mt-2">
+            <Button variant="outline" onClick={() => setModal(null)}>Отмена</Button>
+            <Button onClick={doMoveCred} disabled={!moveTo}>Переместить</Button>
           </div>
         </DialogContent>
       </Dialog>
