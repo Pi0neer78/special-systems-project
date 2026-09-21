@@ -41,6 +41,46 @@ function Spinner() {
   return <div className="flex justify-center py-12"><div className="w-7 h-7 border-2 border-primary border-t-transparent rounded-full animate-spin" /></div>;
 }
 
+// ── Генерация логина/пароля из названия клиента ──────────────────────────────
+
+const TRANSLIT_MAP: Record<string, string> = {
+  а: 'A', б: 'B', в: 'V', г: 'G', д: 'D', е: 'E', ё: 'E', ж: 'ZH', з: 'Z', и: 'I',
+  й: 'Y', к: 'K', л: 'L', м: 'M', н: 'N', о: 'O', п: 'P', р: 'R', с: 'S', т: 'T',
+  у: 'U', ф: 'F', х: 'H', ц: 'TS', ч: 'CH', ш: 'SH', щ: 'SCH', ъ: '', ы: 'Y', ь: '',
+  э: 'E', ю: 'YU', я: 'YA',
+};
+
+function transliterate(text: string): string {
+  return text.toLowerCase().split('').map(ch => TRANSLIT_MAP[ch] ?? ch).join('');
+}
+
+function generateLoginFromName(name: string): string {
+  const words = transliterate(name)
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length > 1); // отбрасываем однобуквенные инициалы
+  if (words.length === 0) return '';
+  const base = words.join('_');
+  const digits = String(Math.floor(1000 + Math.random() * 9000));
+  return `${base}${digits}`;
+}
+
+const PASSWORD_SYLLABLES = [
+  'eda', 'mama', 'papa', 'kot', 'dom', 'sun', 'moon', 'reka', 'les', 'gora',
+  'ptica', 'volk', 'nebo', 'zima', 'leto', 'more', 'zvezda', 'tigr', 'lev', 'orel',
+];
+
+function generatePassword(): string {
+  const s1 = PASSWORD_SYLLABLES[Math.floor(Math.random() * PASSWORD_SYLLABLES.length)];
+  const s2 = PASSWORD_SYLLABLES[Math.floor(Math.random() * PASSWORD_SYLLABLES.length)];
+  const n1 = Math.floor(10 + Math.random() * 90);
+  const n2 = Math.floor(10 + Math.random() * 90);
+  let pwd = `${s1}${n1}${s2}${n2}`;
+  if (pwd.length < 8) pwd += String(Math.floor(Math.random() * 10));
+  return pwd.slice(0, 10);
+}
+
 function Field({ label, children, half }: { label: string; children: React.ReactNode; half?: boolean }) {
   return (
     <div className={half ? 'col-span-1' : 'col-span-2'}>
@@ -1260,10 +1300,25 @@ export function ClientsSection({ configDbs, onClientsChanged }: { configDbs: Con
                       <Input value={form.address} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} className={inputCls} />
                     </Field>
                     <Field label="Логин" half>
-                      <Input value={form.login} onChange={e => setForm(f => ({ ...f, login: e.target.value }))} className={inputCls} />
+                      <div className="flex gap-1">
+                        <Input value={form.login} onChange={e => setForm(f => ({ ...f, login: e.target.value }))} className={inputCls} />
+                        <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0 border-border"
+                          title="Сгенерировать логин из названия"
+                          disabled={!form.name.trim()}
+                          onClick={() => setForm(f => ({ ...f, login: generateLoginFromName(f.name) }))}>
+                          <Icon name="Wand2" size={14} />
+                        </Button>
+                      </div>
                     </Field>
                     <Field label={modal.item ? 'Новый пароль' : 'Пароль'} half>
-                      <Input type="password" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className={inputCls} placeholder={modal.item ? 'Не менять' : ''} />
+                      <div className="flex gap-1">
+                        <Input type="text" value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} className={inputCls} placeholder={modal.item ? 'Не менять' : ''} />
+                        <Button type="button" size="icon" variant="outline" className="h-8 w-8 shrink-0 border-border"
+                          title="Сгенерировать пароль"
+                          onClick={() => setForm(f => ({ ...f, password: generatePassword() }))}>
+                          <Icon name="Wand2" size={14} />
+                        </Button>
+                      </div>
                     </Field>
                   </div>
                 )}
