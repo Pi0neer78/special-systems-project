@@ -487,6 +487,8 @@ export function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) =>
   const [applying, setApplying] = useState(false);
   const [checkingAll, setCheckingAll] = useState(false);
   const [allResultModal, setAllResultModal] = useState<{ checked: number; outdated: CheckResult[]; errors: CheckResult[] } | null>(null);
+  const [applyingIds, setApplyingIds] = useState<Set<number>>(new Set());
+  const [appliedIds, setAppliedIds] = useState<Set<number>>(new Set());
 
   const load = useCallback(() => {
     setLoading(true);
@@ -556,7 +558,25 @@ export function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) =>
       toast.error(res.error);
       return;
     }
+    setAppliedIds(new Set());
     setAllResultModal(res);
+  };
+
+  const applyUpdateFromList = async (o: CheckResult) => {
+    const target = dbs.find(x => x.id === o.id);
+    if (!target || !o.latest) return;
+    setApplyingIds(prev => new Set(prev).add(o.id));
+    await api(`resource=databases&id=${target.id}`, 'PUT', {
+      config_name: target.config_name,
+      min_platform_version: target.min_platform_version,
+      actual_config_version: o.latest,
+      update_release_date: o.latest_date || target.update_release_date,
+      rs_code: target.rs_code,
+    });
+    setApplyingIds(prev => { const next = new Set(prev); next.delete(o.id); return next; });
+    setAppliedIds(prev => new Set(prev).add(o.id));
+    load();
+    toast.success(`${target.config_name}: версия обновлена до ${o.latest}`);
   };
 
   const filteredDbs = dbs.filter(d =>
@@ -717,17 +737,27 @@ export function DatabasesSection({ onLoaded }: { onLoaded?: (dbs: ConfigDB[]) =>
               <div>
                 <p className="text-sm mb-2">Найдены обновления для {allResultModal.outdated.length} баз:</p>
                 <div className="space-y-2">
-                  {allResultModal.outdated.map(o => (
-                    <div key={o.id} className="rounded-lg bg-secondary/40 p-3 flex items-center justify-between gap-2">
-                      <div>
-                        <div className="text-sm font-medium">{o.config_name}</div>
-                        <div className="text-xs text-muted-foreground font-mono">{o.current || '—'} → <span className="text-primary">{o.latest}</span></div>
+                  {allResultModal.outdated.map(o => {
+                    const isApplying = applyingIds.has(o.id);
+                    const isApplied = appliedIds.has(o.id);
+                    return (
+                      <div key={o.id} className="rounded-lg bg-secondary/40 p-3 flex items-center justify-between gap-2">
+                        <div>
+                          <div className="text-sm font-medium">{o.config_name}</div>
+                          <div className="text-xs text-muted-foreground font-mono">{o.current || '—'} → <span className="text-primary">{o.latest}</span></div>
+                        </div>
+                        {isApplied ? (
+                          <span className="flex items-center gap-1 text-xs text-primary shrink-0">
+                            <Icon name="Check" size={14} /> Применено
+                          </span>
+                        ) : (
+                          <Button size="sm" variant="outline" className="border-border h-7 shrink-0" disabled={isApplying} onClick={() => applyUpdateFromList(o)}>
+                            {isApplying ? <Icon name="Loader2" size={14} className="animate-spin" /> : 'Применить'}
+                          </Button>
+                        )}
                       </div>
-                      <Button size="sm" variant="outline" className="border-border h-7 shrink-0" onClick={() => { setAllResultModal(null); setCheckModal({ ...o, has_update: true }); }}>
-                        Применить
-                      </Button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
