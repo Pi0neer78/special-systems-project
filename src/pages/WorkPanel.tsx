@@ -1423,6 +1423,8 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
   const [autoArchiveConfirm, setAutoArchiveConfirm] = useState<{ count: number; days: number } | null>(null);
   const [autoArchiveChecking, setAutoArchiveChecking] = useState(false);
   const [autoArchiving, setAutoArchiving] = useState(false);
+  const [archivedCount, setArchivedCount] = useState(0);
+  const [exportingArchive, setExportingArchive] = useState(false);
 
   const changeView = (v: 'table' | 'cards' | 'board') => {
     setView(v);
@@ -1468,7 +1470,48 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     const params = new URLSearchParams({ resource: 'tickets', archived: '1' });
     const data = await fetch(`${TICKETS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json());
     setArchiveLoading(false);
-    if (Array.isArray(data)) setArchivedTickets(data);
+    if (Array.isArray(data)) { setArchivedTickets(data); setArchivedCount(data.length); }
+  };
+
+  const loadArchivedCount = async () => {
+    const params = new URLSearchParams({ resource: 'tickets', archived: '1', count_only: '1' });
+    const data = await fetch(`${TICKETS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json()).catch(() => null);
+    if (data && typeof data.count === 'number') setArchivedCount(data.count);
+  };
+
+  const exportArchivedTicketsToExcel = () => {
+    if (archivedTickets.length === 0) return;
+    setExportingArchive(true);
+    try {
+      const HEADERS = ['ID', 'Клиент', 'Тип', 'Описание', 'Статус', 'Приоритет', 'Подана', 'Решена', 'В архиве с', 'Ответственный', 'Результат'];
+      const aoa: string[][] = [HEADERS];
+      for (const t of archivedTickets) {
+        aoa.push([
+          String(t.id),
+          t.client_name || '',
+          t.problem_type || '',
+          t.description || '',
+          STATUS_LABELS[t.status]?.label || t.status,
+          PRIORITY_LABELS[t.priority]?.label || t.priority,
+          t.submitted_at ? new Date(t.submitted_at).toLocaleString('ru') : '',
+          t.resolved_at ? new Date(t.resolved_at).toLocaleString('ru') : '',
+          t.archived_at ? new Date(t.archived_at).toLocaleString('ru') : '',
+          t.assignee_name || t.assignee_login || '',
+          t.result || '',
+        ]);
+      }
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [
+        { wch: 6 }, { wch: 24 }, { wch: 20 }, { wch: 40 }, { wch: 12 }, { wch: 10 },
+        { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 40 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Архив заявок');
+      const stamp = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `Архив заявок ${stamp}.xlsx`);
+    } finally {
+      setExportingArchive(false);
+    }
   };
 
   const setTicketArchived = async (t: Ticket, archived: boolean) => {
@@ -1480,6 +1523,7 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     });
     setArchivingId(null);
     toast.success(archived ? 'Заявка отправлена в архив' : 'Заявка возвращена из архива');
+    loadArchivedCount();
     if (showArchive) loadArchived();
     load();
   };
@@ -1515,13 +1559,14 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     if (res?.archived !== undefined) {
       toast.success(`Заархивировано заявок: ${res.archived}`);
       load();
+      loadArchivedCount();
       if (showArchive) loadArchived();
     } else {
       toast.error('Не удалось выполнить архивацию');
     }
   };
 
-  useEffect(() => { loadMeta(); }, []);
+  useEffect(() => { loadMeta(); loadArchivedCount(); }, []);
   useEffect(() => { load(); }, [filterStatuses, filterClient, filterType]);
   useEffect(() => {
     const onRefresh = () => load();
@@ -1579,6 +1624,7 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     setDetailModal(null);
     setEditModal(null);
     load();
+    loadArchivedCount();
     if (showArchive) loadArchived();
   };
 
@@ -1674,8 +1720,13 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
             </button>
           </div>
         )}
-        <Button size="sm" variant="outline" onClick={() => setShowArchive(true)} className="h-8 border-border">
+        <Button size="sm" variant="outline" onClick={() => setShowArchive(true)} className="h-8 border-border relative">
           <Icon name="Archive" size={14} className="mr-1" /> Архив
+          {archivedCount > 0 && (
+            <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] leading-none font-semibold">
+              {archivedCount}
+            </span>
+          )}
         </Button>
         <span className="ml-auto text-xs text-muted-foreground self-center">{tickets.length} заявок</span>
       </div>
@@ -2090,9 +2141,17 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
       <Dialog open={showArchive} onOpenChange={setShowArchive}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-display uppercase tracking-wide flex items-center gap-2">
-              <Icon name="Archive" size={16} /> Архив заявок
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-3 pr-6">
+              <DialogTitle className="font-display uppercase tracking-wide flex items-center gap-2">
+                <Icon name="Archive" size={16} /> Архив заявок
+              </DialogTitle>
+              {archivedTickets.length > 0 && (
+                <Button size="sm" variant="outline" disabled={exportingArchive} onClick={exportArchivedTicketsToExcel} className="h-7 text-xs border-border shrink-0">
+                  <Icon name={exportingArchive ? 'Loader' : 'FileSpreadsheet'} size={13} className={`mr-1.5 ${exportingArchive ? 'animate-spin' : ''}`} />
+                  Экспорт в Excel
+                </Button>
+              )}
+            </div>
           </DialogHeader>
           {archiveLoading ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground">
@@ -2276,6 +2335,8 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [autoArchiveConfirm, setAutoArchiveConfirm] = useState<{ count: number; days: number } | null>(null);
   const [autoArchiveChecking, setAutoArchiveChecking] = useState(false);
   const [autoArchiving, setAutoArchiving] = useState(false);
+  const [archivedCount, setArchivedCount] = useState(0);
+  const [exportingArchive, setExportingArchive] = useState(false);
 
   const [editModal, setEditModal] = useState<Task | 'new' | null>(null);
   const [form, setForm] = useState(EMPTY_TASK_FORM);
@@ -2319,7 +2380,46 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
     const params = new URLSearchParams({ resource: 'tasks', archived: '1' });
     const data = await fetch(`${TASKS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json());
     setArchiveLoading(false);
-    if (Array.isArray(data)) setArchivedTasks(data);
+    if (Array.isArray(data)) { setArchivedTasks(data); setArchivedCount(data.length); }
+  };
+
+  const loadArchivedCount = async () => {
+    const params = new URLSearchParams({ resource: 'tasks', archived: '1', count_only: '1' });
+    const data = await fetch(`${TASKS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json()).catch(() => null);
+    if (data && typeof data.count === 'number') setArchivedCount(data.count);
+  };
+
+  const exportArchivedTasksToExcel = () => {
+    if (archivedTasks.length === 0) return;
+    setExportingArchive(true);
+    try {
+      const HEADERS = ['ID', 'Название', 'Описание', 'Статус', 'Срок', 'Ответственный', 'Автор', 'Создана', 'В архиве с'];
+      const aoa: string[][] = [HEADERS];
+      for (const t of archivedTasks) {
+        aoa.push([
+          String(t.id),
+          t.title || '',
+          t.description || '',
+          TASK_STATUS_LABELS[t.status]?.label || t.status,
+          t.due_date ? new Date(t.due_date).toLocaleDateString('ru') : '',
+          t.assignee_name || t.assignee_login || '',
+          t.author_name || t.author_login || '',
+          t.created_at ? new Date(t.created_at).toLocaleString('ru') : '',
+          t.archived_at ? new Date(t.archived_at).toLocaleString('ru') : '',
+        ]);
+      }
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [
+        { wch: 6 }, { wch: 30 }, { wch: 40 }, { wch: 12 }, { wch: 14 },
+        { wch: 20 }, { wch: 20 }, { wch: 18 }, { wch: 18 },
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Архив задач');
+      const stamp = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `Архив задач ${stamp}.xlsx`);
+    } finally {
+      setExportingArchive(false);
+    }
   };
 
   const setTaskArchived = async (t: Task, archived: boolean) => {
@@ -2331,6 +2431,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
     });
     setArchivingId(null);
     toast.success(archived ? 'Задача отправлена в архив' : 'Задача возвращена из архива');
+    loadArchivedCount();
     if (showArchive) loadArchived();
     load();
   };
@@ -2366,13 +2467,14 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
     if (res?.archived !== undefined) {
       toast.success(`Заархивировано задач: ${res.archived}`);
       load();
+      loadArchivedCount();
       if (showArchive) loadArchived();
     } else {
       toast.error('Не удалось выполнить архивацию');
     }
   };
 
-  useEffect(() => { loadMeta(); }, []);
+  useEffect(() => { loadMeta(); loadArchivedCount(); }, []);
   useEffect(() => { load(); }, [filterStatuses, filterAssignee, search, sort, order]);
 
   useEffect(() => { if (showArchive) loadArchived(); }, [showArchive]);
@@ -2460,6 +2562,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
     setDetailModal(null);
     setEditModal(null);
     load();
+    loadArchivedCount();
     if (showArchive) loadArchived();
   };
 
@@ -2526,8 +2629,13 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
             </button>
           </div>
         )}
-        <Button size="sm" variant="outline" onClick={() => setShowArchive(true)} className="h-8 border-border">
+        <Button size="sm" variant="outline" onClick={() => setShowArchive(true)} className="h-8 border-border relative">
           <Icon name="Archive" size={14} className="mr-1" /> Архив
+          {archivedCount > 0 && (
+            <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] leading-none font-semibold">
+              {archivedCount}
+            </span>
+          )}
         </Button>
         <Button onClick={openNew} size="sm" className="h-8 ml-auto bg-primary text-primary-foreground hover:bg-primary/90">
           <Icon name="Plus" size={14} className="mr-1" /> Новая задача
@@ -2937,9 +3045,17 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
       <Dialog open={showArchive} onOpenChange={setShowArchive}>
         <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-display uppercase tracking-wide flex items-center gap-2">
-              <Icon name="Archive" size={16} /> Архив задач
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-3 pr-6">
+              <DialogTitle className="font-display uppercase tracking-wide flex items-center gap-2">
+                <Icon name="Archive" size={16} /> Архив задач
+              </DialogTitle>
+              {archivedTasks.length > 0 && (
+                <Button size="sm" variant="outline" disabled={exportingArchive} onClick={exportArchivedTasksToExcel} className="h-7 text-xs border-border shrink-0">
+                  <Icon name={exportingArchive ? 'Loader' : 'FileSpreadsheet'} size={13} className={`mr-1.5 ${exportingArchive ? 'animate-spin' : ''}`} />
+                  Экспорт в Excel
+                </Button>
+              )}
+            </div>
           </DialogHeader>
           {archiveLoading ? (
             <div className="flex items-center justify-center h-32 text-muted-foreground">

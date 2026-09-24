@@ -137,7 +137,7 @@ def handler(event: dict, context) -> dict:
       GET    ?resource=staff-verify         — проверка токена сотрудника
       POST   ?resource=client-login         — вход клиента
       GET    ?resource=client-verify        — проверка токена клиента
-      GET    ?resource=tickets              — список заявок (фильтры: status, client_id, problem_type, assignee_id, archived)
+      GET    ?resource=tickets              — список заявок (фильтры: status, client_id, problem_type, assignee_id, archived, count_only=1 — вернуть только {count})
       GET    ?resource=tickets&id=N         — одна заявка по ID
       POST   ?resource=tickets              — создать заявку (только клиент)
       PATCH  ?resource=tickets&id=N         — изменить заявку (только сотрудник; поле is_archived — архивация/разархивация)
@@ -382,6 +382,14 @@ def handler(event: dict, context) -> dict:
                     where_parts.append(f"t.assignee_id = {int(qs['assignee_id'])}")
 
             where_sql = ('WHERE ' + ' AND '.join(where_parts)) if where_parts else ''
+
+            if qs.get('count_only') == '1':
+                cur.execute(f"SELECT COUNT(*) AS cnt FROM {SCHEMA}.tickets t {where_sql}")
+                count = cur.fetchone()['cnt']
+                cur.close()
+                conn.close()
+                return resp(200, {'count': count})
+
             cur.execute(f"""
                 SELECT t.*,
                        c.name as client_name,

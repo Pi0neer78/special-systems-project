@@ -222,6 +222,11 @@ def handler(event: dict, context) -> dict:
                     sort_col = sort_map.get(sort, 't.due_date')
 
                     where_sql = f"WHERE {' AND '.join(where)}" if where else ''
+
+                    if qs.get('count_only') == '1':
+                        cur.execute(f"SELECT COUNT(*) AS cnt FROM {SCHEMA}.tasks t {where_sql}", params)
+                        return ok({'count': cur.fetchone()['cnt']})
+
                     query = f"{TASK_SELECT} {where_sql} ORDER BY {sort_col} {order} NULLS LAST, t.id DESC"
                     cur.execute(query, params)
                     rows = cur.fetchall()
