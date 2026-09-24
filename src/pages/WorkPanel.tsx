@@ -2569,6 +2569,11 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
                     <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" onClick={() => openEdit(t)} title="Редактировать">
                       <Icon name="Pencil" size={12} />
                     </button>
+                    {(t.status === 'done' || t.status === 'cancelled') && (
+                      <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" disabled={archivingId === t.id} onClick={() => setTaskArchived(t, true)} title="Отправить в архив">
+                        <Icon name="Archive" size={12} />
+                      </button>
+                    )}
                     <button className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-black/10 transition-colors" onClick={() => setConfirmDelete(t)} title="Удалить">
                       <Icon name="Trash2" size={12} />
                     </button>
@@ -2634,6 +2639,11 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
                             <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" onClick={() => openEdit(t)} title="Редактировать">
                               <Icon name="Pencil" size={11} />
                             </button>
+                            {(t.status === 'done' || t.status === 'cancelled') && (
+                              <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" disabled={archivingId === t.id} onClick={() => setTaskArchived(t, true)} title="Отправить в архив">
+                                <Icon name="Archive" size={11} />
+                              </button>
+                            )}
                             <button className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-black/10 transition-colors" onClick={() => setConfirmDelete(t)} title="Удалить">
                               <Icon name="Trash2" size={11} />
                             </button>
