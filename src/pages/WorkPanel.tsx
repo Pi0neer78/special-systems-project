@@ -1404,7 +1404,6 @@ function isOverdue(t: Ticket) {
 const PRIORITY_COLOR: Record<string, string> = { low: 'gray', medium: 'blue', high: 'yellow', urgent: 'red' };
 const TICKETS_VIEW_KEY = 'wp_tickets_view';
 const TICKETS_ARCHIVE_DAYS_KEY = 'wp_tickets_archive_days';
-const TICKETS_LAST_AUTOARCHIVE_KEY = 'wp_tickets_last_autoarchive';
 
 function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -1421,6 +1420,9 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archiveDays, setArchiveDays] = useState(() => localStorage.getItem(TICKETS_ARCHIVE_DAYS_KEY) || '30');
   const [archivingId, setArchivingId] = useState<number | null>(null);
+  const [autoArchiveConfirm, setAutoArchiveConfirm] = useState<{ count: number; days: number } | null>(null);
+  const [autoArchiveChecking, setAutoArchiveChecking] = useState(false);
+  const [autoArchiving, setAutoArchiving] = useState(false);
 
   const changeView = (v: 'table' | 'cards' | 'board') => {
     setView(v);
@@ -1482,17 +1484,40 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     load();
   };
 
-  const runAutoArchive = async (days: string) => {
-    const n = Number(days);
-    if (!n || n < 1) return;
+  const checkAutoArchive = async () => {
+    const n = Number(archiveDays);
+    if (!n || n < 1) {
+      toast.error('Укажите корректное количество дней');
+      return;
+    }
+    setAutoArchiveChecking(true);
+    const res = await fetch(`${TICKETS_URL}?resource=archive-old-tickets&days=${n}`, {
+      headers: apiHeaders,
+    }).then(r => r.json()).catch(() => null);
+    setAutoArchiveChecking(false);
+    if (res && typeof res.count === 'number') {
+      setAutoArchiveConfirm({ count: res.count, days: n });
+    } else {
+      toast.error('Не удалось проверить количество заявок');
+    }
+  };
+
+  const runAutoArchive = async () => {
+    if (!autoArchiveConfirm) return;
+    setAutoArchiving(true);
     const res = await fetch(`${TICKETS_URL}?resource=archive-old-tickets`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
-      body: JSON.stringify({ days: n }),
+      body: JSON.stringify({ days: autoArchiveConfirm.days }),
     }).then(r => r.json()).catch(() => null);
-    if (res?.archived) {
-      toast.success(`Автоархивация: ${res.archived} заявок отправлено в архив`);
+    setAutoArchiving(false);
+    setAutoArchiveConfirm(null);
+    if (res?.archived !== undefined) {
+      toast.success(`Заархивировано заявок: ${res.archived}`);
       load();
+      if (showArchive) loadArchived();
+    } else {
+      toast.error('Не удалось выполнить архивацию');
     }
   };
 
@@ -1503,17 +1528,6 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     window.addEventListener('tickets-refresh', onRefresh);
     return () => window.removeEventListener('tickets-refresh', onRefresh);
   }, [filterStatuses, filterClient, filterType]);
-
-  // Автоархивация раз в сутки при заходе на страницу
-  useEffect(() => {
-    if (!isAdmin) return;
-    const today = new Date().toDateString();
-    const last = localStorage.getItem(TICKETS_LAST_AUTOARCHIVE_KEY);
-    if (last === today) return;
-    localStorage.setItem(TICKETS_LAST_AUTOARCHIVE_KEY, today);
-    runAutoArchive(archiveDays);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
 
   useEffect(() => { if (showArchive) loadArchived(); }, [showArchive]);
 
@@ -1650,12 +1664,14 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
         )}
         {isAdmin && (
           <div className="flex items-center gap-1.5 bg-secondary/30 border border-border rounded-md px-2 h-8">
-            <Icon name="Timer" size={12} className="text-muted-foreground" />
-            <span className="text-xs text-muted-foreground whitespace-nowrap">Автоархив через</span>
-            <Input value={archiveDays} onChange={e => setArchiveDays(e.target.value.replace(/\D/g, ''))}
-              onBlur={() => localStorage.setItem(TICKETS_ARCHIVE_DAYS_KEY, archiveDays || '30')}
-              className="h-6 w-12 text-xs bg-transparent border-border px-1.5" />
+            <Input value={archiveDays} onChange={e => { setArchiveDays(e.target.value.replace(/\D/g, '')); localStorage.setItem(TICKETS_ARCHIVE_DAYS_KEY, e.target.value.replace(/\D/g, '') || '30'); }}
+              className="h-6 w-10 text-xs bg-transparent border-border px-1.5" />
             <span className="text-xs text-muted-foreground">дн.</span>
+            <button onClick={checkAutoArchive} disabled={autoArchiveChecking}
+              className="h-6 px-2 -my-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1">
+              {autoArchiveChecking ? <Icon name="Loader" size={12} className="animate-spin" /> : <Icon name="Timer" size={12} />}
+              Автоархивирование
+            </button>
           </div>
         )}
         <Button size="sm" variant="outline" onClick={() => setShowArchive(true)} className="h-8 border-border">
@@ -2121,6 +2137,33 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Подтверждение автоархивации */}
+      <Dialog open={!!autoArchiveConfirm} onOpenChange={() => setAutoArchiveConfirm(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Icon name="TriangleAlert" size={17} className="text-primary" />
+              Автоархивирование
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {autoArchiveConfirm?.count
+              ? <>Будет заархивировано решённых/отменённых заявок старше {autoArchiveConfirm.days} дн.: <span className="text-foreground font-semibold">{autoArchiveConfirm.count}</span>. Выполнить архивацию?</>
+              : 'Подходящих для архивации заявок не найдено.'}
+          </p>
+          <div className="flex gap-3 pt-1">
+            <Button variant="outline" onClick={() => setAutoArchiveConfirm(null)} className="flex-1">
+              {autoArchiveConfirm?.count ? 'Нет' : 'Закрыть'}
+            </Button>
+            {!!autoArchiveConfirm?.count && (
+              <Button disabled={autoArchiving} onClick={runAutoArchive} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90">
+                {autoArchiving ? 'Архивация...' : 'Да'}
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -2212,7 +2255,6 @@ function isTaskOverdue(t: Task) {
 
 const TASKS_VIEW_KEY = 'wp_tasks_view';
 const TASKS_ARCHIVE_DAYS_KEY = 'wp_tasks_archive_days';
-const TASKS_LAST_AUTOARCHIVE_KEY = 'wp_tasks_last_autoarchive';
 
 function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -2231,6 +2273,9 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [archiveDays, setArchiveDays] = useState(() => localStorage.getItem(TASKS_ARCHIVE_DAYS_KEY) || '30');
   const [archivingId, setArchivingId] = useState<number | null>(null);
+  const [autoArchiveConfirm, setAutoArchiveConfirm] = useState<{ count: number; days: number } | null>(null);
+  const [autoArchiveChecking, setAutoArchiveChecking] = useState(false);
+  const [autoArchiving, setAutoArchiving] = useState(false);
 
   const [editModal, setEditModal] = useState<Task | 'new' | null>(null);
   const [form, setForm] = useState(EMPTY_TASK_FORM);
@@ -2290,33 +2335,45 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
     load();
   };
 
-  const runAutoArchive = async (days: string) => {
-    const n = Number(days);
-    if (!n || n < 1) return;
+  const checkAutoArchive = async () => {
+    const n = Number(archiveDays);
+    if (!n || n < 1) {
+      toast.error('Укажите корректное количество дней');
+      return;
+    }
+    setAutoArchiveChecking(true);
+    const res = await fetch(`${TASKS_URL}?resource=archive-old-tasks&days=${n}`, {
+      headers: apiHeaders,
+    }).then(r => r.json()).catch(() => null);
+    setAutoArchiveChecking(false);
+    if (res && typeof res.count === 'number') {
+      setAutoArchiveConfirm({ count: res.count, days: n });
+    } else {
+      toast.error('Не удалось проверить количество задач');
+    }
+  };
+
+  const runAutoArchive = async () => {
+    if (!autoArchiveConfirm) return;
+    setAutoArchiving(true);
     const res = await fetch(`${TASKS_URL}?resource=archive-old-tasks`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
-      body: JSON.stringify({ days: n }),
+      body: JSON.stringify({ days: autoArchiveConfirm.days }),
     }).then(r => r.json()).catch(() => null);
-    if (res?.archived) {
-      toast.success(`Автоархивация: ${res.archived} задач отправлено в архив`);
+    setAutoArchiving(false);
+    setAutoArchiveConfirm(null);
+    if (res?.archived !== undefined) {
+      toast.success(`Заархивировано задач: ${res.archived}`);
       load();
+      if (showArchive) loadArchived();
+    } else {
+      toast.error('Не удалось выполнить архивацию');
     }
   };
 
   useEffect(() => { loadMeta(); }, []);
   useEffect(() => { load(); }, [filterStatuses, filterAssignee, search, sort, order]);
-
-  // Автоархивация раз в сутки при заходе на страницу
-  useEffect(() => {
-    if (!isAdmin) return;
-    const today = new Date().toDateString();
-    const last = localStorage.getItem(TASKS_LAST_AUTOARCHIVE_KEY);
-    if (last === today) return;
-    localStorage.setItem(TASKS_LAST_AUTOARCHIVE_KEY, today);
-    runAutoArchive(archiveDays);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAdmin]);
 
   useEffect(() => { if (showArchive) loadArchived(); }, [showArchive]);
 
@@ -2459,12 +2516,14 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
         </div>
         {isAdmin && (
           <div className="flex items-center gap-1.5 bg-secondary/30 border border-border rounded-md px-2 h-8">
-            <Icon name="Timer" size={12} className="text-muted-foreground" />
-            <span className="text-xs text-muted-foreground whitespace-nowrap">Автоархив через</span>
-            <Input value={archiveDays} onChange={e => setArchiveDays(e.target.value.replace(/\D/g, ''))}
-              onBlur={() => localStorage.setItem(TASKS_ARCHIVE_DAYS_KEY, archiveDays || '30')}
-              className="h-6 w-12 text-xs bg-transparent border-border px-1.5" />
+            <Input value={archiveDays} onChange={e => { setArchiveDays(e.target.value.replace(/\D/g, '')); localStorage.setItem(TASKS_ARCHIVE_DAYS_KEY, e.target.value.replace(/\D/g, '') || '30'); }}
+              className="h-6 w-10 text-xs bg-transparent border-border px-1.5" />
             <span className="text-xs text-muted-foreground">дн.</span>
+            <button onClick={checkAutoArchive} disabled={autoArchiveChecking}
+              className="h-6 px-2 -my-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1">
+              {autoArchiveChecking ? <Icon name="Loader" size={12} className="animate-spin" /> : <Icon name="Timer" size={12} />}
+              Автоархивирование
+            </button>
           </div>
         )}
         <Button size="sm" variant="outline" onClick={() => setShowArchive(true)} className="h-8 border-border">
@@ -2923,6 +2982,33 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
               })}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Подтверждение автоархивации */}
+      <Dialog open={!!autoArchiveConfirm} onOpenChange={() => setAutoArchiveConfirm(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-base">
+              <Icon name="TriangleAlert" size={17} className="text-primary" />
+              Автоархивирование
+            </DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            {autoArchiveConfirm?.count
+              ? <>Будет заархивировано завершённых/отменённых задач старше {autoArchiveConfirm.days} дн.: <span className="text-foreground font-semibold">{autoArchiveConfirm.count}</span>. Выполнить архивацию?</>
+              : 'Подходящих для архивации задач не найдено.'}
+          </p>
+          <div className="flex gap-3 pt-1">
+            <Button variant="outline" onClick={() => setAutoArchiveConfirm(null)} className="flex-1">
+              {autoArchiveConfirm?.count ? 'Нет' : 'Закрыть'}
+            </Button>
+            {!!autoArchiveConfirm?.count && (
+              <Button disabled={autoArchiving} onClick={runAutoArchive} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90">
+                {autoArchiving ? 'Архивация...' : 'Да'}
+              </Button>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

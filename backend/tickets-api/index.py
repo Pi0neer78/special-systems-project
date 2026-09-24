@@ -141,7 +141,8 @@ def handler(event: dict, context) -> dict:
       GET    ?resource=tickets&id=N         — одна заявка по ID
       POST   ?resource=tickets              — создать заявку (только клиент)
       PATCH  ?resource=tickets&id=N         — изменить заявку (только сотрудник; поле is_archived — архивация/разархивация)
-      POST   ?resource=archive-old-tickets  — автоархивация решённых/отменённых заявок старше N дней (body: {days: N})
+      GET    ?resource=archive-old-tickets&days=N — предпросмотр: сколько заявок будет заархивировано
+      POST   ?resource=archive-old-tickets  — архивация решённых/отменённых заявок старше N дней (body: {days: N})
       GET    ?resource=ticket-meta          — справочники: клиенты, сотрудники, типы, приоритеты
       GET    ?resource=client-databases     — базы данных клиента (только клиент)
       GET    ?resource=ticket-messages&ticket_id=N   — переписка по заявке
@@ -287,20 +288,35 @@ def handler(event: dict, context) -> dict:
 
     # ══════════════════════════════════════════════════════════════════════════
     # АВТОАРХИВАЦИЯ старых заявок
-    # POST ?resource=archive-old-tickets
+    # GET  ?resource=archive-old-tickets&days=30   — предпросмотр: сколько заявок будет заархивировано
+    # POST ?resource=archive-old-tickets            — выполнить архивацию
     # Header: X-Admin-Token: <token>
-    # Body: { "days": 30 } — архивировать resolved/cancelled заявки старше N дней
-    # Response: { "ok": true, "archived": N }
+    # Body (POST): { "days": 30 } — архивировать resolved/cancelled заявки старше N дней
+    # Response: { "ok": true, "archived"/"count": N }
     # ══════════════════════════════════════════════════════════════════════════
-    if resource == 'archive-old-tickets' and method == 'POST':
+    if resource == 'archive-old-tickets' and method in ('GET', 'POST'):
         admin_token = headers.get('X-Admin-Token', '')
         admin_user_id, _, _ = verify_admin_token(admin_token)
         if admin_user_id is None:
             return resp(401, {'error': 'Не авторизован'})
-        body = json.loads(event.get('body') or '{}')
-        days = int(body.get('days') or 30)
+        if method == 'GET':
+            days = int(qs.get('days') or 30)
+        else:
+            body = json.loads(event.get('body') or '{}')
+            days = int(body.get('days') or 30)
         conn = get_conn()
         cur = conn.cursor(cursor_factory=RealDictCursor)
+        if method == 'GET':
+            cur.execute(f"""
+                SELECT COUNT(*) AS cnt FROM {SCHEMA}.tickets
+                WHERE is_archived = FALSE
+                  AND status IN ('resolved', 'cancelled')
+                  AND COALESCE(resolved_at, status_changed_at) < now() - interval '{days} days'
+            """)
+            count = cur.fetchone()['cnt']
+            cur.close()
+            conn.close()
+            return resp(200, {'ok': True, 'count': count})
         cur.execute(f"""
             UPDATE {SCHEMA}.tickets
             SET is_archived = TRUE, archived_at = now()

@@ -143,8 +143,18 @@ def handler(event: dict, context) -> dict:
                 return ok({'users': users, 'statuses': STATUSES, 'colors': COLORS, 'repeat_rules': REPEAT_RULES})
 
         # ── АВТОАРХИВАЦИЯ старых задач ─────────────────────────────────────────
-        # POST ?resource=archive-old-tasks
-        # Body: { "days": 30 } — архивировать done/cancelled задачи старше N дней
+        # GET  ?resource=archive-old-tasks&days=30 — предпросмотр: сколько задач будет заархивировано
+        # POST ?resource=archive-old-tasks { days: 30 } — выполнить архивацию
+        if resource == 'archive-old-tasks' and method == 'GET':
+            days = int(qs.get('days') or 30)
+            cur.execute(f"""
+                SELECT COUNT(*) AS cnt FROM {SCHEMA}.tasks
+                WHERE is_archived = FALSE
+                  AND status IN ('done', 'cancelled')
+                  AND updated_at < NOW() - interval '{days} days'
+            """)
+            count = cur.fetchone()['cnt']
+            return ok({'ok': True, 'count': count})
         if resource == 'archive-old-tasks' and method == 'POST':
             days = int(body.get('days') or 30)
             cur.execute(f"""
