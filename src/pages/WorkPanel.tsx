@@ -1762,6 +1762,11 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
                     <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" onClick={() => openEdit(t)} title="Редактировать">
                       <Icon name="Pencil" size={12} />
                     </button>
+                    {(t.status === 'resolved' || t.status === 'cancelled') && (
+                      <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" disabled={archivingId === t.id} onClick={() => setTicketArchived(t, true)} title="Отправить в архив">
+                        <Icon name="Archive" size={12} />
+                      </button>
+                    )}
                     {isAdmin && (
                       <button className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-black/10 transition-colors" onClick={() => setConfirmDelete(t)} title="Удалить">
                         <Icon name="Trash2" size={12} />
@@ -1830,6 +1835,11 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
                             <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" onClick={() => openEdit(t)} title="Редактировать">
                               <Icon name="Pencil" size={11} />
                             </button>
+                            {(t.status === 'resolved' || t.status === 'cancelled') && (
+                              <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" disabled={archivingId === t.id} onClick={() => setTicketArchived(t, true)} title="Отправить в архив">
+                                <Icon name="Archive" size={11} />
+                              </button>
+                            )}
                             {isAdmin && (
                               <button className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-black/10 transition-colors" onClick={() => setConfirmDelete(t)} title="Удалить">
                                 <Icon name="Trash2" size={11} />
@@ -1964,6 +1974,11 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
                     <Button variant="outline" onClick={() => setConfirmDelete(t)}
                       className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive">
                       <Icon name="Trash2" size={14} />
+                    </Button>
+                  )}
+                  {(t.status === 'resolved' || t.status === 'cancelled') && (
+                    <Button variant="outline" onClick={() => { setTicketArchived(t, true); setDetailModal(null); }} title="В архив">
+                      <Icon name="Archive" size={14} />
                     </Button>
                   )}
                   <Button variant="outline" onClick={() => setDetailModal(null)} className="flex-1">Закрыть</Button>
