@@ -1386,6 +1386,8 @@ type Ticket = {
   assignee_id: number | null;
   assignee_name: string | null;
   assignee_login: string | null;
+  is_archived?: boolean;
+  archived_at?: string | null;
 };
 
 type TicketMeta = {
@@ -1401,6 +1403,8 @@ function isOverdue(t: Ticket) {
 
 const PRIORITY_COLOR: Record<string, string> = { low: 'gray', medium: 'blue', high: 'yellow', urgent: 'red' };
 const TICKETS_VIEW_KEY = 'wp_tickets_view';
+const TICKETS_ARCHIVE_DAYS_KEY = 'wp_tickets_archive_days';
+const TICKETS_LAST_AUTOARCHIVE_KEY = 'wp_tickets_last_autoarchive';
 
 function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -1412,6 +1416,11 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
   const [view, setView] = useState<'table' | 'cards' | 'board'>(() => (localStorage.getItem(TICKETS_VIEW_KEY) as 'table' | 'cards' | 'board') || 'table');
   const [dragTicketId, setDragTicketId] = useState<number | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
+  const [showArchive, setShowArchive] = useState(false);
+  const [archivedTickets, setArchivedTickets] = useState<Ticket[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveDays, setArchiveDays] = useState(() => localStorage.getItem(TICKETS_ARCHIVE_DAYS_KEY) || '30');
+  const [archivingId, setArchivingId] = useState<number | null>(null);
 
   const changeView = (v: 'table' | 'cards' | 'board') => {
     setView(v);
@@ -1452,6 +1461,41 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     if (data.clients) setMeta(data);
   };
 
+  const loadArchived = async () => {
+    setArchiveLoading(true);
+    const params = new URLSearchParams({ resource: 'tickets', archived: '1' });
+    const data = await fetch(`${TICKETS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json());
+    setArchiveLoading(false);
+    if (Array.isArray(data)) setArchivedTickets(data);
+  };
+
+  const setTicketArchived = async (t: Ticket, archived: boolean) => {
+    setArchivingId(t.id);
+    await fetch(`${TICKETS_URL}?resource=tickets&id=${t.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({ is_archived: archived }),
+    });
+    setArchivingId(null);
+    toast.success(archived ? 'Заявка отправлена в архив' : 'Заявка возвращена из архива');
+    if (showArchive) loadArchived();
+    load();
+  };
+
+  const runAutoArchive = async (days: string) => {
+    const n = Number(days);
+    if (!n || n < 1) return;
+    const res = await fetch(`${TICKETS_URL}?resource=archive-old-tickets`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({ days: n }),
+    }).then(r => r.json()).catch(() => null);
+    if (res?.archived) {
+      toast.success(`Автоархивация: ${res.archived} заявок отправлено в архив`);
+      load();
+    }
+  };
+
   useEffect(() => { loadMeta(); }, []);
   useEffect(() => { load(); }, [filterStatuses, filterClient, filterType]);
   useEffect(() => {
@@ -1459,6 +1503,19 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     window.addEventListener('tickets-refresh', onRefresh);
     return () => window.removeEventListener('tickets-refresh', onRefresh);
   }, [filterStatuses, filterClient, filterType]);
+
+  // Автоархивация раз в сутки при заходе на страницу
+  useEffect(() => {
+    if (!isAdmin) return;
+    const today = new Date().toDateString();
+    const last = localStorage.getItem(TICKETS_LAST_AUTOARCHIVE_KEY);
+    if (last === today) return;
+    localStorage.setItem(TICKETS_LAST_AUTOARCHIVE_KEY, today);
+    runAutoArchive(archiveDays);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
+
+  useEffect(() => { if (showArchive) loadArchived(); }, [showArchive]);
 
   const openEdit = (t: Ticket) => {
     setEditForm({
@@ -1508,6 +1565,7 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     setDetailModal(null);
     setEditModal(null);
     load();
+    if (showArchive) loadArchived();
   };
 
   const openCreate = () => {
@@ -1590,6 +1648,19 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
             <Icon name="Plus" size={14} className="mr-1" /> Новая заявка
           </Button>
         )}
+        {isAdmin && (
+          <div className="flex items-center gap-1.5 bg-secondary/30 border border-border rounded-md px-2 h-8">
+            <Icon name="Timer" size={12} className="text-muted-foreground" />
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Автоархив через</span>
+            <Input value={archiveDays} onChange={e => setArchiveDays(e.target.value.replace(/\D/g, ''))}
+              onBlur={() => localStorage.setItem(TICKETS_ARCHIVE_DAYS_KEY, archiveDays || '30')}
+              className="h-6 w-12 text-xs bg-transparent border-border px-1.5" />
+            <span className="text-xs text-muted-foreground">дн.</span>
+          </div>
+        )}
+        <Button size="sm" variant="outline" onClick={() => setShowArchive(true)} className="h-8 border-border">
+          <Icon name="Archive" size={14} className="mr-1" /> Архив
+        </Button>
         <span className="ml-auto text-xs text-muted-foreground self-center">{tickets.length} заявок</span>
       </div>
 
@@ -1657,6 +1728,11 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
                         <Button size="sm" className="h-7 text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => openEdit(t)}>
                           <Icon name="Pencil" size={12} />
                         </Button>
+                        {(t.status === 'resolved' || t.status === 'cancelled') && (
+                          <Button size="sm" disabled={archivingId === t.id} className="h-7 text-xs bg-secondary/60 text-foreground border border-border hover:bg-secondary" title="Отправить в архив" onClick={() => setTicketArchived(t, true)}>
+                            <Icon name="Archive" size={12} />
+                          </Button>
+                        )}
                         {isAdmin && (
                           <Button size="sm" className="h-7 text-xs bg-destructive/15 text-destructive border border-destructive/30 hover:bg-destructive/25" onClick={() => setConfirmDelete(t)}>
                             <Icon name="Trash2" size={12} />
@@ -1825,6 +1901,11 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
                     <Icon name="Trash2" size={14} />
                   </Button>
                 )}
+                {editModal && (editModal.status === 'resolved' || editModal.status === 'cancelled') && (
+                  <Button variant="outline" onClick={() => { setTicketArchived(editModal, true); setEditModal(null); }} title="В архив">
+                    <Icon name="Archive" size={14} />
+                  </Button>
+                )}
                 <Button variant="outline" onClick={() => setEditModal(null)} className="flex-1">Отмена</Button>
                 <Button disabled={saving} onClick={saveEdit} className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90">
                   {saving ? 'Сохранение...' : 'Сохранить'}
@@ -1973,6 +2054,58 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Архив заявок — отдельное окно, не смешивается с основным списком */}
+      <Dialog open={showArchive} onOpenChange={setShowArchive}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase tracking-wide flex items-center gap-2">
+              <Icon name="Archive" size={16} /> Архив заявок
+            </DialogTitle>
+          </DialogHeader>
+          {archiveLoading ? (
+            <div className="flex items-center justify-center h-32 text-muted-foreground">
+              <Icon name="Loader" size={18} className="animate-spin mr-2" /> Загрузка...
+            </div>
+          ) : archivedTickets.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 text-muted-foreground gap-2">
+              <Icon name="Archive" size={32} className="opacity-20" />
+              <p className="text-sm">Архив пуст</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {archivedTickets.map(t => {
+                const st = STATUS_LABELS[t.status] || STATUS_LABELS.new;
+                return (
+                  <div key={t.id} className="rounded-lg border border-border p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium truncate">#{t.id} · {t.client_name} — {t.problem_type}</div>
+                      <div className="text-xs text-muted-foreground truncate">{t.description}</div>
+                      <div className="flex items-center gap-3 mt-1 text-xs">
+                        <span className={st.color}>{st.label}</span>
+                        {t.archived_at && <span className="text-muted-foreground">В архиве с {new Date(t.archived_at).toLocaleDateString('ru')}</span>}
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 shrink-0">
+                      <Button size="sm" variant="outline" className="h-7 text-xs border-border" onClick={() => setDetailModal(t)}>
+                        <Icon name="Eye" size={12} />
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs border-border" title="Вернуть из архива" onClick={() => setTicketArchived(t, false)}>
+                        <Icon name="ArchiveRestore" size={12} />
+                      </Button>
+                      {isAdmin && (
+                        <Button size="sm" className="h-7 text-xs bg-destructive/15 text-destructive border border-destructive/30 hover:bg-destructive/25" onClick={() => setConfirmDelete(t)}>
+                          <Icon name="Trash2" size={12} />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -2038,6 +2171,8 @@ type Task = {
   created_at: string;
   updated_at: string;
   watchers: TaskUser[];
+  is_archived?: boolean;
+  archived_at?: string | null;
 };
 
 type TaskMeta = { users: TaskUser[]; statuses: string[]; colors: string[]; repeat_rules: string[] };
@@ -2061,8 +2196,10 @@ function isTaskOverdue(t: Task) {
 }
 
 const TASKS_VIEW_KEY = 'wp_tasks_view';
+const TASKS_ARCHIVE_DAYS_KEY = 'wp_tasks_archive_days';
+const TASKS_LAST_AUTOARCHIVE_KEY = 'wp_tasks_last_autoarchive';
 
-function TasksSection({ token }: { token: string }) {
+function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [meta, setMeta] = useState<TaskMeta | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2074,6 +2211,11 @@ function TasksSection({ token }: { token: string }) {
   const [view, setView] = useState<'table' | 'cards' | 'board'>(() => (localStorage.getItem(TASKS_VIEW_KEY) as 'table' | 'cards' | 'board') || 'table');
   const [dragTaskId, setDragTaskId] = useState<number | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
+  const [showArchive, setShowArchive] = useState(false);
+  const [archivedTasks, setArchivedTasks] = useState<Task[]>([]);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveDays, setArchiveDays] = useState(() => localStorage.getItem(TASKS_ARCHIVE_DAYS_KEY) || '30');
+  const [archivingId, setArchivingId] = useState<number | null>(null);
 
   const [editModal, setEditModal] = useState<Task | 'new' | null>(null);
   const [form, setForm] = useState(EMPTY_TASK_FORM);
@@ -2112,8 +2254,56 @@ function TasksSection({ token }: { token: string }) {
     if (data.users) setMeta(data);
   };
 
+  const loadArchived = async () => {
+    setArchiveLoading(true);
+    const params = new URLSearchParams({ resource: 'tasks', archived: '1' });
+    const data = await fetch(`${TASKS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json());
+    setArchiveLoading(false);
+    if (Array.isArray(data)) setArchivedTasks(data);
+  };
+
+  const setTaskArchived = async (t: Task, archived: boolean) => {
+    setArchivingId(t.id);
+    await fetch(`${TASKS_URL}?resource=tasks&id=${t.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({ is_archived: archived }),
+    });
+    setArchivingId(null);
+    toast.success(archived ? 'Задача отправлена в архив' : 'Задача возвращена из архива');
+    if (showArchive) loadArchived();
+    load();
+  };
+
+  const runAutoArchive = async (days: string) => {
+    const n = Number(days);
+    if (!n || n < 1) return;
+    const res = await fetch(`${TASKS_URL}?resource=archive-old-tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+      body: JSON.stringify({ days: n }),
+    }).then(r => r.json()).catch(() => null);
+    if (res?.archived) {
+      toast.success(`Автоархивация: ${res.archived} задач отправлено в архив`);
+      load();
+    }
+  };
+
   useEffect(() => { loadMeta(); }, []);
   useEffect(() => { load(); }, [filterStatuses, filterAssignee, search, sort, order]);
+
+  // Автоархивация раз в сутки при заходе на страницу
+  useEffect(() => {
+    if (!isAdmin) return;
+    const today = new Date().toDateString();
+    const last = localStorage.getItem(TASKS_LAST_AUTOARCHIVE_KEY);
+    if (last === today) return;
+    localStorage.setItem(TASKS_LAST_AUTOARCHIVE_KEY, today);
+    runAutoArchive(archiveDays);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin]);
+
+  useEffect(() => { if (showArchive) loadArchived(); }, [showArchive]);
 
   const openNew = () => {
     setForm(EMPTY_TASK_FORM);
@@ -2198,6 +2388,7 @@ function TasksSection({ token }: { token: string }) {
     setDetailModal(null);
     setEditModal(null);
     load();
+    if (showArchive) loadArchived();
   };
 
   const sortOptions = [
@@ -2251,6 +2442,19 @@ function TasksSection({ token }: { token: string }) {
             <Icon name="Columns3" size={13} />
           </button>
         </div>
+        {isAdmin && (
+          <div className="flex items-center gap-1.5 bg-secondary/30 border border-border rounded-md px-2 h-8">
+            <Icon name="Timer" size={12} className="text-muted-foreground" />
+            <span className="text-xs text-muted-foreground whitespace-nowrap">Автоархив через</span>
+            <Input value={archiveDays} onChange={e => setArchiveDays(e.target.value.replace(/\D/g, ''))}
+              onBlur={() => localStorage.setItem(TASKS_ARCHIVE_DAYS_KEY, archiveDays || '30')}
+              className="h-6 w-12 text-xs bg-transparent border-border px-1.5" />
+            <span className="text-xs text-muted-foreground">дн.</span>
+          </div>
+        )}
+        <Button size="sm" variant="outline" onClick={() => setShowArchive(true)} className="h-8 border-border">
+          <Icon name="Archive" size={14} className="mr-1" /> Архив
+        </Button>
         <Button onClick={openNew} size="sm" className="h-8 ml-auto bg-primary text-primary-foreground hover:bg-primary/90">
           <Icon name="Plus" size={14} className="mr-1" /> Новая задача
         </Button>
@@ -2319,6 +2523,11 @@ function TasksSection({ token }: { token: string }) {
                         <Button size="sm" className="h-7 text-xs bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => openEdit(t)}>
                           <Icon name="Pencil" size={12} />
                         </Button>
+                        {(t.status === 'done' || t.status === 'cancelled') && (
+                          <Button size="sm" disabled={archivingId === t.id} className="h-7 text-xs bg-secondary/60 text-foreground border border-border hover:bg-secondary" title="Отправить в архив" onClick={() => setTaskArchived(t, true)}>
+                            <Icon name="Archive" size={12} />
+                          </Button>
+                        )}
                         <Button size="sm" className="h-7 text-xs bg-destructive/15 text-destructive border border-destructive/30 hover:bg-destructive/25" onClick={() => setConfirmDelete(t)}>
                           <Icon name="Trash2" size={12} />
                         </Button>
@@ -2603,6 +2812,11 @@ function TasksSection({ token }: { token: string }) {
                     className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive">
                     <Icon name="Trash2" size={14} />
                   </Button>
+                  {(t.status === 'done' || t.status === 'cancelled') && (
+                    <Button variant="outline" onClick={() => { setTaskArchived(t, true); setDetailModal(null); }} title="В архив">
+                      <Icon name="Archive" size={14} />
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={() => setDetailModal(null)} className="flex-1">Закрыть</Button>
                   <Button className="flex-1 bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25" onClick={() => { setDetailModal(null); openEdit(t); }}>
                     <Icon name="Pencil" size={13} className="mr-1.5" /> Редактировать
@@ -2632,6 +2846,58 @@ function TasksSection({ token }: { token: string }) {
               {deleting ? 'Удаление...' : 'Удалить'}
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Архив задач — отдельное окно, не смешивается с основным списком */}
+      <Dialog open={showArchive} onOpenChange={setShowArchive}>
+        <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase tracking-wide flex items-center gap-2">
+              <Icon name="Archive" size={16} /> Архив задач
+            </DialogTitle>
+          </DialogHeader>
+          {archiveLoading ? (
+            <div className="flex items-center justify-center h-32 text-muted-foreground">
+              <Icon name="Loader" size={18} className="animate-spin mr-2" /> Загрузка...
+            </div>
+          ) : archivedTasks.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-32 text-muted-foreground gap-2">
+              <Icon name="Archive" size={32} className="opacity-20" />
+              <p className="text-sm">Архив пуст</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {archivedTasks.map(t => {
+                const st = TASK_STATUS_LABELS[t.status] || TASK_STATUS_LABELS.new;
+                return (
+                  <div key={t.id} className="rounded-lg border border-border p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${colorDot(t.color)}`} />
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium truncate">{t.title}</div>
+                        <div className="flex items-center gap-3 mt-0.5 text-xs">
+                          <span className={st.color}>{st.label}</span>
+                          {t.archived_at && <span className="text-muted-foreground">В архиве с {new Date(t.archived_at).toLocaleDateString('ru')}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 shrink-0">
+                      <Button size="sm" variant="outline" className="h-7 text-xs border-border" onClick={() => setDetailModal(t)}>
+                        <Icon name="Eye" size={12} />
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 text-xs border-border" title="Вернуть из архива" onClick={() => setTaskArchived(t, false)}>
+                        <Icon name="ArchiveRestore" size={12} />
+                      </Button>
+                      <Button size="sm" className="h-7 text-xs bg-destructive/15 text-destructive border border-destructive/30 hover:bg-destructive/25" onClick={() => setConfirmDelete(t)}>
+                        <Icon name="Trash2" size={12} />
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>
@@ -3250,7 +3516,7 @@ export default function WorkPanel() {
         )}
         {tab === 'tasks' && (
           <div className="container py-6">
-            <TasksSection token={localStorage.getItem(TOKEN_KEY) || ''} />
+            <TasksSection token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={authInfo.role === 'admin'} />
           </div>
         )}
         {tab === 'admin-users' && isAdminRole && (

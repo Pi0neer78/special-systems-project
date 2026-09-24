@@ -99,6 +99,7 @@ TASK_SELECT = f"""
     SELECT t.id, t.title, t.description, t.status, t.color,
            t.due_date, t.due_time, t.all_day, t.repeat_rule, t.repeat_until,
            t.author_id, t.assignee_id, t.created_at, t.updated_at,
+           t.is_archived, t.archived_at,
            au_a.full_name AS author_name, au_a.login AS author_login,
            au_s.full_name AS assignee_name, au_s.login AS assignee_login
     FROM {SCHEMA}.tasks t
@@ -108,8 +109,11 @@ TASK_SELECT = f"""
 
 
 def handler(event: dict, context) -> dict:
-    """API задач: список, фильтрация, сортировка, CRUD, наблюдатели.
-    resource=tasks|task-meta
+    """API задач: список, фильтрация, сортировка, CRUD, наблюдатели, архивация.
+    resource=tasks|task-meta|archive-old-tasks
+    GET ?resource=tasks&archived=1 — архивные задачи (по умолчанию archived=0 — активные)
+    PATCH ?resource=tasks&id=N { is_archived: true|false } — ручная архивация/разархивация
+    POST ?resource=archive-old-tasks { days: 30 } — автоархивация done/cancelled задач старше N дней
     """
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
@@ -138,11 +142,31 @@ def handler(event: dict, context) -> dict:
                 users = [dict(r) for r in cur.fetchall()]
                 return ok({'users': users, 'statuses': STATUSES, 'colors': COLORS, 'repeat_rules': REPEAT_RULES})
 
+        # ── АВТОАРХИВАЦИЯ старых задач ─────────────────────────────────────────
+        # POST ?resource=archive-old-tasks
+        # Body: { "days": 30 } — архивировать done/cancelled задачи старше N дней
+        if resource == 'archive-old-tasks' and method == 'POST':
+            days = int(body.get('days') or 30)
+            cur.execute(f"""
+                UPDATE {SCHEMA}.tasks
+                SET is_archived = TRUE, archived_at = NOW()
+                WHERE is_archived = FALSE
+                  AND status IN ('done', 'cancelled')
+                  AND updated_at < NOW() - interval '{days} days'
+                RETURNING id
+            """)
+            archived_ids = [r['id'] for r in cur.fetchall()]
+            conn.commit()
+            return ok({'ok': True, 'archived': len(archived_ids)})
+
         # ── TASKS ──────────────────────────────────────────────────────────────
         if resource == 'tasks':
             if not rid:
                 if method == 'GET':
                     where, params = [], []
+                    archived_f = qs.get('archived', '0')
+                    where.append('t.is_archived = %s')
+                    params.append(archived_f == '1')
                     if caller['role'] != 'admin':
                         where.append(f"""(t.author_id = %s OR t.assignee_id = %s OR t.id IN (
                             SELECT task_id FROM {SCHEMA}.task_watchers WHERE user_id = %s
@@ -292,6 +316,13 @@ def handler(event: dict, context) -> dict:
                         fields.append('due_time=%s'); vals.append(body['due_time'])
                     if 'all_day' in body:
                         fields.append('all_day=%s'); vals.append(body['all_day'])
+                    if 'is_archived' in body:
+                        if bool(body['is_archived']):
+                            fields.append('is_archived=TRUE')
+                            fields.append('archived_at=NOW()')
+                        else:
+                            fields.append('is_archived=FALSE')
+                            fields.append('archived_at=NULL')
                     if not fields:
                         return err('No fields to update')
                     fields.append('updated_at=NOW()')

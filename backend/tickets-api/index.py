@@ -137,10 +137,11 @@ def handler(event: dict, context) -> dict:
       GET    ?resource=staff-verify         — проверка токена сотрудника
       POST   ?resource=client-login         — вход клиента
       GET    ?resource=client-verify        — проверка токена клиента
-      GET    ?resource=tickets              — список заявок (фильтры: status, client_id, problem_type, assignee_id)
+      GET    ?resource=tickets              — список заявок (фильтры: status, client_id, problem_type, assignee_id, archived)
       GET    ?resource=tickets&id=N         — одна заявка по ID
       POST   ?resource=tickets              — создать заявку (только клиент)
-      PATCH  ?resource=tickets&id=N         — изменить заявку (только сотрудник)
+      PATCH  ?resource=tickets&id=N         — изменить заявку (только сотрудник; поле is_archived — архивация/разархивация)
+      POST   ?resource=archive-old-tickets  — автоархивация решённых/отменённых заявок старше N дней (body: {days: N})
       GET    ?resource=ticket-meta          — справочники: клиенты, сотрудники, типы, приоритеты
       GET    ?resource=client-databases     — базы данных клиента (только клиент)
       GET    ?resource=ticket-messages&ticket_id=N   — переписка по заявке
@@ -285,6 +286,36 @@ def handler(event: dict, context) -> dict:
         })
 
     # ══════════════════════════════════════════════════════════════════════════
+    # АВТОАРХИВАЦИЯ старых заявок
+    # POST ?resource=archive-old-tickets
+    # Header: X-Admin-Token: <token>
+    # Body: { "days": 30 } — архивировать resolved/cancelled заявки старше N дней
+    # Response: { "ok": true, "archived": N }
+    # ══════════════════════════════════════════════════════════════════════════
+    if resource == 'archive-old-tickets' and method == 'POST':
+        admin_token = headers.get('X-Admin-Token', '')
+        admin_user_id, _, _ = verify_admin_token(admin_token)
+        if admin_user_id is None:
+            return resp(401, {'error': 'Не авторизован'})
+        body = json.loads(event.get('body') or '{}')
+        days = int(body.get('days') or 30)
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(f"""
+            UPDATE {SCHEMA}.tickets
+            SET is_archived = TRUE, archived_at = now()
+            WHERE is_archived = FALSE
+              AND status IN ('resolved', 'cancelled')
+              AND COALESCE(resolved_at, status_changed_at) < now() - interval '{days} days'
+            RETURNING id
+        """)
+        archived_ids = [r['id'] for r in cur.fetchall()]
+        conn.commit()
+        cur.close()
+        conn.close()
+        return resp(200, {'ok': True, 'archived': len(archived_ids)})
+
+    # ══════════════════════════════════════════════════════════════════════════
     # ЗАЯВКИ
     # ══════════════════════════════════════════════════════════════════════════
     if resource == 'tickets':
@@ -312,7 +343,10 @@ def handler(event: dict, context) -> dict:
             where_parts = []
             if is_client:
                 where_parts.append(f"t.client_id = {client_id_from_token}")
+                where_parts.append("t.is_archived = FALSE")
             if is_staff:
+                archived_f = qs.get('archived', '0')
+                where_parts.append("t.is_archived = TRUE" if archived_f == '1' else "t.is_archived = FALSE")
                 if admin_role != 'admin':
                     where_parts.append(f"t.assignee_id = {admin_user_id}")
                 if qs.get('status'):
@@ -477,6 +511,14 @@ def handler(event: dict, context) -> dict:
             if 'extra_info' in body:
                 sets.append("extra_info = %s")
                 params.append(body['extra_info'] or None)
+
+            if 'is_archived' in body:
+                if bool(body['is_archived']):
+                    sets.append("is_archived = TRUE")
+                    sets.append("archived_at = now()")
+                else:
+                    sets.append("is_archived = FALSE")
+                    sets.append("archived_at = NULL")
 
             if not sets:
                 return resp(400, {'error': 'Нечего обновлять'})
