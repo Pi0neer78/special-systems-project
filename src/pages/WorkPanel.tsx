@@ -15,6 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { UsersSection, ClientsSection, DatabasesSection, api as adminApi } from '@/pages/Admin';
 
 
@@ -1661,31 +1662,56 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     }
   };
 
+  const ticketsActiveFiltersCount = filterStatuses.size + (filterClient ? 1 : 0) + (filterType ? 1 : 0);
+
   return (
     <div>
       {/* Фильтры */}
       <div className="flex flex-wrap gap-3 mb-5">
-        <div className="flex items-center gap-1.5 bg-secondary/30 border border-border rounded-md px-2 h-8">
-          {STATUSES_LIST.map(s => {
-            const active = filterStatuses.has(s.value);
-            return (
-              <button key={s.value} onClick={() => toggleStatus(s.value)}
-                className={`h-5 px-2 rounded text-xs font-medium transition-colors ${active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'}`}>
-                {s.label}
-              </button>
-            );
-          })}
-        </div>
-        <select value={filterClient} onChange={e => setFilterClient(e.target.value)}
-          className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
-          <option value="">Все клиенты</option>
-          {meta?.clients.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
-        </select>
-        <select value={filterType} onChange={e => setFilterType(e.target.value)}
-          className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
-          <option value="">Все типы</option>
-          {PROBLEM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-        </select>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="sm" variant="outline" className="h-8 border-border relative">
+              <Icon name="Filter" size={14} className="mr-1" /> Фильтры
+              {ticketsActiveFiltersCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] leading-none font-semibold">
+                  {ticketsActiveFiltersCount}
+                </span>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-72 space-y-3">
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1.5">Статус</div>
+              <div className="flex flex-wrap gap-1">
+                {STATUSES_LIST.map(s => {
+                  const active = filterStatuses.has(s.value);
+                  return (
+                    <button key={s.value} onClick={() => toggleStatus(s.value)}
+                      className={`h-6 px-2 rounded text-xs font-medium transition-colors ${active ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary'}`}>
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1.5">Клиент</div>
+              <select value={filterClient} onChange={e => setFilterClient(e.target.value)}
+                className="w-full h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                <option value="">Все клиенты</option>
+                {meta?.clients.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1.5">Тип проблемы</div>
+              <select value={filterType} onChange={e => setFilterType(e.target.value)}
+                className="w-full h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                <option value="">Все типы</option>
+                {PROBLEM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </PopoverContent>
+        </Popover>
         <button onClick={load} className="h-8 px-3 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
           <Icon name="RefreshCw" size={12} />
         </button>
@@ -1708,26 +1734,38 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
             <Icon name="Plus" size={14} className="mr-1" /> Новая заявка
           </Button>
         )}
-        {isAdmin && (
-          <div className="flex items-center gap-1.5 bg-secondary/30 border border-border rounded-md px-2 h-8">
-            <Input value={archiveDays} onChange={e => { setArchiveDays(e.target.value.replace(/\D/g, '')); localStorage.setItem(TICKETS_ARCHIVE_DAYS_KEY, e.target.value.replace(/\D/g, '') || '30'); }}
-              className="h-6 w-10 text-xs bg-transparent border-border px-1.5" />
-            <span className="text-xs text-muted-foreground">дн.</span>
-            <button onClick={checkAutoArchive} disabled={autoArchiveChecking}
-              className="h-6 px-2 -my-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1">
-              {autoArchiveChecking ? <Icon name="Loader" size={12} className="animate-spin" /> : <Icon name="Timer" size={12} />}
-              Автоархивирование
-            </button>
-          </div>
-        )}
-        <Button size="sm" variant="outline" onClick={() => setShowArchive(true)} className="h-8 border-border relative">
-          <Icon name="Archive" size={14} className="mr-1" /> Архив
-          {archivedCount > 0 && (
-            <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] leading-none font-semibold">
-              {archivedCount}
-            </span>
-          )}
-        </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="sm" variant="outline" className="h-8 border-border relative">
+              <Icon name="Archive" size={14} className="mr-1" /> Архив
+              {archivedCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] leading-none font-semibold">
+                  {archivedCount}
+                </span>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-64 space-y-3">
+            <Button size="sm" variant="outline" className="w-full h-8 border-border" onClick={() => setShowArchive(true)}>
+              <Icon name="Eye" size={13} className="mr-1.5" /> Просмотреть архив
+            </Button>
+            {isAdmin && (
+              <div className="space-y-1.5 pt-3 border-t border-border">
+                <div className="text-xs font-medium text-muted-foreground">Автоархивирование</div>
+                <div className="flex items-center gap-1.5">
+                  <Input value={archiveDays} onChange={e => { setArchiveDays(e.target.value.replace(/\D/g, '')); localStorage.setItem(TICKETS_ARCHIVE_DAYS_KEY, e.target.value.replace(/\D/g, '') || '30'); }}
+                    className="h-7 w-12 text-xs bg-secondary/40 border-border px-1.5" />
+                  <span className="text-xs text-muted-foreground">дн.</span>
+                  <button onClick={checkAutoArchive} disabled={autoArchiveChecking}
+                    className="h-7 px-2 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1 ml-auto">
+                    {autoArchiveChecking ? <Icon name="Loader" size={12} className="animate-spin" /> : <Icon name="Timer" size={12} />}
+                    Запустить
+                  </button>
+                </div>
+              </div>
+            )}
+          </PopoverContent>
+        </Popover>
         <span className="ml-auto text-xs text-muted-foreground self-center">{tickets.length} заявок</span>
       </div>
 
@@ -2573,36 +2611,50 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
     { value: 'status', label: 'По статусу' },
   ];
 
+  const tasksActiveFiltersCount = filterStatuses.size + (filterAssignee ? 1 : 0);
+
   return (
     <div>
       {/* Фильтры */}
       <div className="flex flex-wrap gap-3 mb-5">
-        <div className="flex items-center gap-1.5 bg-secondary/30 border border-border rounded-md px-2 h-8">
-          {TASK_STATUSES_LIST.map(s => {
-            const active = filterStatuses.has(s.value);
-            return (
-              <button key={s.value} onClick={() => toggleStatus(s.value)}
-                className={`h-5 px-2 rounded text-xs font-medium transition-colors ${active ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'}`}>
-                {s.label}
-              </button>
-            );
-          })}
-        </div>
-        <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
-          className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
-          <option value="">Все ответственные</option>
-          {meta?.users.map(u => <option key={u.id} value={String(u.id)}>{userLabel(u)}</option>)}
-        </select>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="sm" variant="outline" className="h-8 border-border relative">
+              <Icon name="Filter" size={14} className="mr-1" /> Фильтры
+              {tasksActiveFiltersCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] leading-none font-semibold">
+                  {tasksActiveFiltersCount}
+                </span>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-72 space-y-3">
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1.5">Статус</div>
+              <div className="flex flex-wrap gap-1">
+                {TASK_STATUSES_LIST.map(s => {
+                  const active = filterStatuses.has(s.value);
+                  return (
+                    <button key={s.value} onClick={() => toggleStatus(s.value)}
+                      className={`h-6 px-2 rounded text-xs font-medium transition-colors ${active ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary'}`}>
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1.5">Ответственный</div>
+              <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
+                className="w-full h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                <option value="">Все ответственные</option>
+                {meta?.users.map(u => <option key={u.id} value={String(u.id)}>{userLabel(u)}</option>)}
+              </select>
+            </div>
+          </PopoverContent>
+        </Popover>
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по названию..."
           className="h-8 w-48 text-xs bg-secondary/40 border-border" />
-        <select value={sort} onChange={e => setSort(e.target.value)}
-          className="h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
-          {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-        <button onClick={() => setOrder(o => o === 'asc' ? 'desc' : 'asc')}
-          className="h-8 px-2 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
-          <Icon name={order === 'asc' ? 'ArrowUp' : 'ArrowDown'} size={13} />
-        </button>
         <div className="flex items-center gap-0.5 bg-secondary/30 border border-border rounded-md p-0.5 h-8">
           <button onClick={() => changeView('table')} title="Таблица"
             className={`h-6 w-7 rounded flex items-center justify-center transition-colors ${view === 'table' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground'}`}>
@@ -2617,26 +2669,53 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
             <Icon name="Columns3" size={13} />
           </button>
         </div>
-        {isAdmin && (
-          <div className="flex items-center gap-1.5 bg-secondary/30 border border-border rounded-md px-2 h-8">
-            <Input value={archiveDays} onChange={e => { setArchiveDays(e.target.value.replace(/\D/g, '')); localStorage.setItem(TASKS_ARCHIVE_DAYS_KEY, e.target.value.replace(/\D/g, '') || '30'); }}
-              className="h-6 w-10 text-xs bg-transparent border-border px-1.5" />
-            <span className="text-xs text-muted-foreground">дн.</span>
-            <button onClick={checkAutoArchive} disabled={autoArchiveChecking}
-              className="h-6 px-2 -my-1 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1">
-              {autoArchiveChecking ? <Icon name="Loader" size={12} className="animate-spin" /> : <Icon name="Timer" size={12} />}
-              Автоархивирование
-            </button>
-          </div>
-        )}
-        <Button size="sm" variant="outline" onClick={() => setShowArchive(true)} className="h-8 border-border relative">
-          <Icon name="Archive" size={14} className="mr-1" /> Архив
-          {archivedCount > 0 && (
-            <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] leading-none font-semibold">
-              {archivedCount}
-            </span>
-          )}
-        </Button>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button size="sm" variant="outline" className="h-8 border-border relative">
+              <Icon name="Settings2" size={14} className="mr-1" /> Служебные
+              {archivedCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] leading-none font-semibold">
+                  {archivedCount}
+                </span>
+              )}
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-72 space-y-3">
+            <div>
+              <div className="text-xs font-medium text-muted-foreground mb-1.5">Сортировка</div>
+              <div className="flex items-center gap-1.5">
+                <select value={sort} onChange={e => setSort(e.target.value)}
+                  className="flex-1 h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                  {sortOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+                <button onClick={() => setOrder(o => o === 'asc' ? 'desc' : 'asc')}
+                  className="h-8 w-8 shrink-0 flex items-center justify-center text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                  <Icon name={order === 'asc' ? 'ArrowUp' : 'ArrowDown'} size={13} />
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1.5 pt-3 border-t border-border">
+              <div className="text-xs font-medium text-muted-foreground flex items-center justify-between">
+                <span>Архив</span>
+                <button onClick={() => setShowArchive(true)} className="text-primary hover:underline text-xs font-medium">
+                  Открыть ({archivedCount})
+                </button>
+              </div>
+              {isAdmin && (
+                <div className="flex items-center gap-1.5">
+                  <Input value={archiveDays} onChange={e => { setArchiveDays(e.target.value.replace(/\D/g, '')); localStorage.setItem(TASKS_ARCHIVE_DAYS_KEY, e.target.value.replace(/\D/g, '') || '30'); }}
+                    className="h-7 w-12 text-xs bg-secondary/40 border-border px-1.5" />
+                  <span className="text-xs text-muted-foreground">дн.</span>
+                  <button onClick={checkAutoArchive} disabled={autoArchiveChecking}
+                    className="h-7 px-2 rounded text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors flex items-center gap-1 ml-auto">
+                    {autoArchiveChecking ? <Icon name="Loader" size={12} className="animate-spin" /> : <Icon name="Timer" size={12} />}
+                    Запустить
+                  </button>
+                </div>
+              )}
+            </div>
+          </PopoverContent>
+        </Popover>
         <Button onClick={openNew} size="sm" className="h-8 ml-auto bg-primary text-primary-foreground hover:bg-primary/90">
           <Icon name="Plus" size={14} className="mr-1" /> Новая задача
         </Button>
