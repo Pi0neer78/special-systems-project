@@ -1,4 +1,6 @@
 {
+  "google-calendar-api": "https://functions.poehali.dev/dbec742a-c950-42a9-95f7-bd212bd9afab",
+  "google-calendar-callback": "https://functions.poehali.dev/10fa64ad-917b-44a1-be80-b50245489d2b",
   "tasks-api": "https://functions.poehali.dev/98d6bd0b-ee47-46a8-9fdb-701e4c507b47",
   "tickets-api": "https://functions.poehali.dev/4866cc97-c798-42d4-a280-d35071d704a8",
   "work-panel-api": "https://functions.poehali.dev/448dd00e-0d3a-4719-8808-375730e12b42",
