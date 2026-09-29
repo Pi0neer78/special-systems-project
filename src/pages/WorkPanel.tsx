@@ -23,6 +23,7 @@ const AUTH_URL = 'https://functions.poehali.dev/115d85ec-a990-4455-824d-27487ad4
 const API_URL = 'https://functions.poehali.dev/448dd00e-0d3a-4719-8808-375730e12b42';
 const TICKETS_URL = 'https://functions.poehali.dev/4866cc97-c798-42d4-a280-d35071d704a8';
 const TASKS_URL = 'https://functions.poehali.dev/98d6bd0b-ee47-46a8-9fdb-701e4c507b47';
+const GCAL_URL = 'https://functions.poehali.dev/dbec742a-c950-42a9-95f7-bd212bd9afab';
 const TOKEN_KEY = 'admin_token';
 
 function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
@@ -2376,6 +2377,17 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [archivedCount, setArchivedCount] = useState(0);
   const [exportingArchive, setExportingArchive] = useState(false);
 
+  const [gcalConnected, setGcalConnected] = useState(false);
+  const [gcalEmail, setGcalEmail] = useState<string | null>(null);
+  const [gcalStatusLoading, setGcalStatusLoading] = useState(true);
+  const [gcalConnecting, setGcalConnecting] = useState(false);
+  const [gcalModal, setGcalModal] = useState(false);
+  const [gcalDirection, setGcalDirection] = useState<'to_google' | 'from_google' | 'both'>('both');
+  const [gcalDateFrom, setGcalDateFrom] = useState(() => new Date().toISOString().slice(0, 10));
+  const [gcalDateTo, setGcalDateTo] = useState(() => new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10));
+  const [gcalSyncing, setGcalSyncing] = useState(false);
+  const [gcalDisconnecting, setGcalDisconnecting] = useState(false);
+
   const [editModal, setEditModal] = useState<Task | 'new' | null>(null);
   const [form, setForm] = useState(EMPTY_TASK_FORM);
   const [saving, setSaving] = useState(false);
@@ -2512,10 +2524,67 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
     }
   };
 
-  useEffect(() => { loadMeta(); loadArchivedCount(); }, []);
+  const loadGcalStatus = async () => {
+    setGcalStatusLoading(true);
+    const data = await fetch(`${GCAL_URL}?resource=status`, { headers: apiHeaders }).then(r => r.json()).catch(() => null);
+    setGcalStatusLoading(false);
+    if (data) { setGcalConnected(!!data.connected); setGcalEmail(data.google_email || null); }
+  };
+
+  const connectGcal = async () => {
+    setGcalConnecting(true);
+    const data = await fetch(`${GCAL_URL}?resource=auth-url`, { headers: apiHeaders }).then(r => r.json()).catch(() => null);
+    setGcalConnecting(false);
+    if (!data?.url) { toast.error('Не удалось получить ссылку авторизации Google'); return; }
+    window.open(data.url, 'gcal_auth', 'width=520,height=640');
+  };
+
+  const disconnectGcal = async () => {
+    setGcalDisconnecting(true);
+    await fetch(`${GCAL_URL}?resource=disconnect`, { method: 'POST', headers: { ...apiHeaders, 'Content-Type': 'application/json' }, body: '{}' }).catch(() => null);
+    setGcalDisconnecting(false);
+    setGcalConnected(false);
+    setGcalEmail(null);
+    toast.success('Google Calendar отключён');
+  };
+
+  const runGcalSync = async () => {
+    if (!gcalDateFrom || !gcalDateTo) { toast.error('Укажите диапазон дат'); return; }
+    if (gcalDateFrom > gcalDateTo) { toast.error('Дата «с» позже даты «по»'); return; }
+    setGcalSyncing(true);
+    const res = await fetch(`${GCAL_URL}?resource=sync`, {
+      method: 'POST',
+      headers: { ...apiHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ direction: gcalDirection, date_from: gcalDateFrom, date_to: gcalDateTo }),
+    }).then(r => r.json()).catch(() => null);
+    setGcalSyncing(false);
+    if (res?.ok) {
+      const parts: string[] = [];
+      if (gcalDirection !== 'from_google') parts.push(`в Google: ${res.synced_to_google}`);
+      if (gcalDirection !== 'to_google') parts.push(`из Google: ${res.synced_from_google}`);
+      toast.success(`Синхронизировано (${parts.join(', ')})`);
+      if (res.errors?.length) toast.error(`Ошибок: ${res.errors.length}`);
+      setGcalModal(false);
+      load();
+      loadArchivedCount();
+    } else {
+      toast.error(res?.error || 'Не удалось выполнить синхронизацию');
+    }
+  };
+
+  useEffect(() => { loadMeta(); loadArchivedCount(); loadGcalStatus(); }, []);
   useEffect(() => { load(); }, [filterStatuses, filterAssignee, search, sort, order]);
 
   useEffect(() => { if (showArchive) loadArchived(); }, [showArchive]);
+
+  useEffect(() => {
+    const onMsg = (e: MessageEvent) => {
+      if (e.data?.gcal === 'success') { toast.success('Google Calendar подключён'); loadGcalStatus(); }
+      else if (e.data?.gcal === 'error') { toast.error('Не удалось подключить Google Calendar'); }
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
 
   const openNew = () => {
     setForm(EMPTY_TASK_FORM);
@@ -2716,10 +2785,82 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
             </div>
           </PopoverContent>
         </Popover>
-        <Button onClick={openNew} size="sm" className="h-8 ml-auto bg-primary text-primary-foreground hover:bg-primary/90">
+        <Button onClick={() => setGcalModal(true)} size="sm" variant="outline" className="h-8 ml-auto border-border">
+          <Icon name="CalendarSync" size={14} className="mr-1" />
+          Google Calendar
+          {gcalConnected && <span className="ml-1.5 h-1.5 w-1.5 rounded-full bg-green-500" />}
+        </Button>
+        <Button onClick={openNew} size="sm" className="h-8 bg-primary text-primary-foreground hover:bg-primary/90">
           <Icon name="Plus" size={14} className="mr-1" /> Новая задача
         </Button>
       </div>
+
+      <Dialog open={gcalModal} onOpenChange={setGcalModal}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Icon name="CalendarSync" size={16} /> Google Calendar
+            </DialogTitle>
+          </DialogHeader>
+          {gcalStatusLoading ? (
+            <div className="flex items-center justify-center h-20 text-muted-foreground">
+              <Icon name="Loader" size={16} className="animate-spin" />
+            </div>
+          ) : !gcalConnected ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">Подключите свой аккаунт Google, чтобы синхронизировать задачи с календарём.</p>
+              <Button onClick={connectGcal} disabled={gcalConnecting} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
+                {gcalConnecting ? <Icon name="Loader" size={14} className="mr-1.5 animate-spin" /> : <Icon name="Link" size={14} className="mr-1.5" />}
+                Подключить Google
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between text-xs bg-secondary/40 rounded-md px-3 py-2">
+                <span className="text-muted-foreground flex items-center gap-1.5">
+                  <Icon name="CheckCircle2" size={13} className="text-green-500" />
+                  {gcalEmail || 'Подключено'}
+                </span>
+                <button onClick={disconnectGcal} disabled={gcalDisconnecting} className="text-destructive hover:underline">
+                  {gcalDisconnecting ? 'Отключение...' : 'Отключить'}
+                </button>
+              </div>
+
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1.5">Направление синхронизации</div>
+                <div className="flex gap-1">
+                  {[
+                    { value: 'to_google', label: 'В Google' },
+                    { value: 'from_google', label: 'Из Google' },
+                    { value: 'both', label: 'Оба направления' },
+                  ].map(o => (
+                    <button key={o.value} onClick={() => setGcalDirection(o.value as any)}
+                      className={`flex-1 h-8 rounded text-xs font-medium transition-colors ${gcalDirection === o.value ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 text-muted-foreground hover:text-foreground hover:bg-secondary'}`}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1.5">Период синхронизации</div>
+                <div className="flex items-center gap-2">
+                  <Input type="date" value={gcalDateFrom} onChange={e => setGcalDateFrom(e.target.value)}
+                    className="h-8 text-xs bg-secondary/40 border-border" />
+                  <span className="text-xs text-muted-foreground">—</span>
+                  <Input type="date" value={gcalDateTo} onChange={e => setGcalDateTo(e.target.value)}
+                    className="h-8 text-xs bg-secondary/40 border-border" />
+                </div>
+              </div>
+
+              <Button onClick={runGcalSync} disabled={gcalSyncing} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
+                {gcalSyncing ? <Icon name="Loader" size={14} className="mr-1.5 animate-spin" /> : <Icon name="RefreshCw" size={14} className="mr-1.5" />}
+                {gcalSyncing ? 'Синхронизация...' : 'Синхронизировать'}
+              </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {loading ? (
         <div className="flex items-center justify-center h-40 text-muted-foreground">
