@@ -306,6 +306,8 @@ def handler(event: dict, context) -> dict:
                         except Exception as e:
                             errors.append(f"Событие {ev.get('summary','?')}: {str(e)}")
 
+            if errors:
+                print(f"GCAL_SYNC_ERRORS user_id={user_id} direction={direction} range={date_from}..{date_to}: {errors}")
             return ok({'ok': True, 'synced_to_google': synced_to, 'synced_from_google': synced_from, 'errors': errors})
 
         return err('Unknown resource', 404)
