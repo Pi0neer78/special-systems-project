@@ -149,6 +149,12 @@ def gcal_update_event(access_token, calendar_id, event_id, body):
     resp = requests.patch(url, headers={'Authorization': f'Bearer {access_token}', 'Content-Type': 'application/json'}, json=body, timeout=15)
     if not resp.ok:
         print(f"GCAL_UPDATE_FAILED status={resp.status_code} event_id={event_id} body={resp.text}")
+        try:
+            reason = resp.json().get('error', {}).get('errors', [{}])[0].get('reason', '')
+        except Exception:
+            reason = ''
+        if reason == 'eventTypeRestriction':
+            return 'SKIP_SPECIAL_EVENT'
         return None
     return resp.json()
 
@@ -247,6 +253,8 @@ def handler(event: dict, context) -> dict:
                         existing_event_id = links_by_task.get(t['id'])
                         if existing_event_id:
                             res = gcal_update_event(access_token, calendar_id, existing_event_id, ev_body)
+                            if res == 'SKIP_SPECIAL_EVENT':
+                                continue
                         else:
                             res = gcal_insert_event(access_token, calendar_id, ev_body)
                         if not res:
