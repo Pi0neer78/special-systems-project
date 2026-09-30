@@ -359,6 +359,7 @@ def handler(event: dict, context) -> dict:
 
                 if method == 'DELETE':
                     cur.execute(f"DELETE FROM {SCHEMA}.task_watchers WHERE task_id=%s", [rid])
+                    cur.execute(f"DELETE FROM {SCHEMA}.google_calendar_task_links WHERE task_id=%s", [rid])
                     cur.execute(f"DELETE FROM {SCHEMA}.tasks WHERE id=%s RETURNING id", [rid])
                     row = cur.fetchone()
                     conn.commit()
