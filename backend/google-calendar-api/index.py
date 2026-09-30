@@ -115,13 +115,14 @@ def task_to_event_body(task):
 def event_to_task_fields(ev):
     title = ev.get('summary') or 'Без названия'
     description = ev.get('description') or ''
+    is_birthday = ev.get('eventType') == 'birthday'
     start = ev.get('start', {})
     if 'date' in start:
-        return {'title': title, 'description': description, 'due_date': start['date'], 'due_time': None, 'all_day': True}
+        return {'title': title, 'description': description, 'due_date': start['date'], 'due_time': None, 'all_day': True, 'is_birthday': is_birthday}
     dt = start.get('dateTime', '')
     d_part, t_part = dt.split('T') if 'T' in dt else (dt, None)
     t_part = t_part[:8] if t_part else None
-    return {'title': title, 'description': description, 'due_date': d_part, 'due_time': t_part, 'all_day': False}
+    return {'title': title, 'description': description, 'due_date': d_part, 'due_time': t_part, 'all_day': False, 'is_birthday': is_birthday}
 
 
 def gcal_list_events(access_token, calendar_id, date_from, date_to):
@@ -290,9 +291,9 @@ def handler(event: dict, context) -> dict:
                             existing_task_id = links_by_event.get(ev_id)
                             if existing_task_id:
                                 cur.execute(f"""
-                                    UPDATE {SCHEMA}.tasks SET title=%s, description=%s, due_date=%s, due_time=%s, all_day=%s, updated_at=NOW()
+                                    UPDATE {SCHEMA}.tasks SET title=%s, description=%s, due_date=%s, due_time=%s, all_day=%s, is_birthday=%s, updated_at=NOW()
                                     WHERE id=%s
-                                """, (fields['title'], fields['description'], fields['due_date'], fields['due_time'], fields['all_day'], existing_task_id))
+                                """, (fields['title'], fields['description'], fields['due_date'], fields['due_time'], fields['all_day'], fields['is_birthday'], existing_task_id))
                                 cur.execute(f"""
                                     UPDATE {SCHEMA}.google_calendar_task_links SET last_synced_at=NOW(), last_event_updated_at=NOW()
                                     WHERE task_id=%s
@@ -300,10 +301,10 @@ def handler(event: dict, context) -> dict:
                             else:
                                 cur.execute(f"""
                                     INSERT INTO {SCHEMA}.tasks
-                                      (title, description, status, color, due_date, due_time, all_day, author_id, assignee_id)
-                                    VALUES (%s,%s,'new','blue',%s,%s,%s,%s,%s)
+                                      (title, description, status, color, due_date, due_time, all_day, author_id, assignee_id, is_birthday)
+                                    VALUES (%s,%s,'new','blue',%s,%s,%s,%s,%s,%s)
                                     RETURNING id
-                                """, (fields['title'], fields['description'], fields['due_date'], fields['due_time'], fields['all_day'], user_id, user_id))
+                                """, (fields['title'], fields['description'], fields['due_date'], fields['due_time'], fields['all_day'], user_id, user_id, fields['is_birthday']))
                                 new_task_id = cur.fetchone()['id']
                                 cur.execute(f"""
                                     INSERT INTO {SCHEMA}.google_calendar_task_links
