@@ -139,6 +139,7 @@ def gcal_insert_event(access_token, calendar_id, body):
     url = EVENTS_URL.format(cal=calendar_id)
     resp = requests.post(url, headers={'Authorization': f'Bearer {access_token}', 'Content-Type': 'application/json'}, json=body, timeout=15)
     if not resp.ok:
+        print(f"GCAL_INSERT_FAILED status={resp.status_code} body={resp.text}")
         return None
     return resp.json()
 
@@ -147,6 +148,7 @@ def gcal_update_event(access_token, calendar_id, event_id, body):
     url = EVENT_URL.format(cal=calendar_id, eid=event_id)
     resp = requests.patch(url, headers={'Authorization': f'Bearer {access_token}', 'Content-Type': 'application/json'}, json=body, timeout=15)
     if not resp.ok:
+        print(f"GCAL_UPDATE_FAILED status={resp.status_code} event_id={event_id} body={resp.text}")
         return None
     return resp.json()
 
