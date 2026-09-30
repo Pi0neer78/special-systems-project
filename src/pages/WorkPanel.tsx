@@ -3026,6 +3026,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
                         className={`rounded-lg border p-3 flex flex-col gap-1.5 cursor-grab active:cursor-grabbing shadow-sm transition-all ${colorSticky(t.color)} ${overdue ? 'ring-1 ring-red-500/40' : ''} ${dragging ? 'opacity-40' : 'opacity-100'}`}>
                         <div className="flex items-start justify-between gap-1.5">
                           <button className="text-left font-medium text-sm break-words hover:text-primary transition-colors" onClick={() => setDetailModal(t)}>
+                            {t.is_birthday && <span className="mr-1" title="День рождения">🎂</span>}
                             {t.title}
                           </button>
                           <div className="flex gap-0.5 shrink-0">
