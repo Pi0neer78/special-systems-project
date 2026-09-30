@@ -2812,7 +2812,11 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
             </div>
           ) : !gcalConnected ? (
             <div className="space-y-3">
-              <p className="text-sm text-muted-foreground">Подключите свой аккаунт Google, чтобы синхронизировать задачи с календарём.</p>
+              <p className="text-sm text-muted-foreground">Подключите свой личный аккаунт Google, чтобы синхронизировать свои задачи со своим календарём. Это не затрагивает календари других сотрудников — у каждого синхронизация своя.</p>
+              <div className="text-xs bg-secondary/40 rounded-md px-3 py-2 text-muted-foreground flex gap-2">
+                <Icon name="Info" size={14} className="shrink-0 mt-0.5" />
+                <span>Если при входе Google пишет «доступ заблокирован» — попросите администратора добавить ваш email в тестовые пользователи проекта.</span>
+              </div>
               <Button onClick={connectGcal} disabled={gcalConnecting} className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
                 {gcalConnecting ? <Icon name="Loader" size={14} className="mr-1.5 animate-spin" /> : <Icon name="Link" size={14} className="mr-1.5" />}
                 Подключить Google
