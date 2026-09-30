@@ -2329,6 +2329,7 @@ type Task = {
   watchers: TaskUser[];
   is_archived?: boolean;
   archived_at?: string | null;
+  is_birthday?: boolean;
 };
 
 type TaskMeta = { users: TaskUser[]; statuses: string[]; colors: string[]; repeat_rules: string[] };
@@ -2338,6 +2339,7 @@ const EMPTY_TASK_FORM = {
   due_date: '', due_time: '', all_day: true,
   repeat_rule: 'none', repeat_until: '',
   assignee_id: '', watcher_ids: [] as number[],
+  is_birthday: false,
 };
 
 function userLabel(u?: TaskUser | null) {
@@ -2604,6 +2606,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
       repeat_until: t.repeat_until || '',
       assignee_id: t.assignee_id !== null && t.assignee_id !== undefined ? String(t.assignee_id) : '',
       watcher_ids: t.watchers.map(w => w.id),
+      is_birthday: !!t.is_birthday,
     });
     setEditModal(t);
   };
@@ -2629,6 +2632,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
       repeat_until: form.repeat_rule !== 'none' ? (form.repeat_until || null) : null,
       assignee_id: form.assignee_id ? Number(form.assignee_id) : null,
       watcher_ids: form.watcher_ids,
+      is_birthday: form.is_birthday,
     };
     if (editModal === 'new') {
       await fetch(`${TASKS_URL}?resource=tasks`, {
@@ -2891,8 +2895,9 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
                       <span className={`inline-block w-2.5 h-2.5 rounded-full ${colorDot(t.color)}`} />
                     </td>
                     <td className="px-3 py-2.5 max-w-[240px]">
-                      <button className="text-left font-medium truncate hover:text-primary transition-colors" onClick={() => setDetailModal(t)}>
-                        {t.title}
+                      <button className="text-left font-medium truncate hover:text-primary transition-colors flex items-center gap-1" onClick={() => setDetailModal(t)}>
+                        {t.is_birthday && <span title="День рождения">🎂</span>}
+                        <span className="truncate">{t.title}</span>
                       </button>
                     </td>
                     <td className={`px-3 py-2.5 text-xs whitespace-nowrap ${overdue ? 'text-red-400 font-bold' : 'text-muted-foreground'}`}>
@@ -2950,6 +2955,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
               <div key={t.id} className={`relative rounded-lg border p-3.5 flex flex-col gap-2 shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md ${colorSticky(t.color)} ${overdue ? 'ring-1 ring-red-500/40' : ''}`}>
                 <div className="flex items-start justify-between gap-2">
                   <button className="text-left font-medium text-sm break-words hover:text-primary transition-colors" onClick={() => setDetailModal(t)}>
+                    {t.is_birthday && <span className="mr-1" title="День рождения">🎂</span>}
                     {t.title}
                   </button>
                   <div className="flex gap-0.5 shrink-0">
@@ -3080,11 +3086,21 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
                 rows={3} className="bg-secondary/40 border-border resize-none text-sm" placeholder="Описание задачи..." />
             </div>
 
-            <div className="flex items-center gap-2">
-              <input type="checkbox" id="all_day" checked={form.all_day}
-                onChange={e => setForm(f => ({ ...f, all_day: e.target.checked }))}
-                className="w-4 h-4 accent-primary" />
-              <label htmlFor="all_day" className="text-xs text-muted-foreground">Весь день</label>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="all_day" checked={form.all_day}
+                  onChange={e => setForm(f => ({ ...f, all_day: e.target.checked }))}
+                  className="w-4 h-4 accent-primary" />
+                <label htmlFor="all_day" className="text-xs text-muted-foreground">Весь день</label>
+              </div>
+              <div className="flex items-center gap-2">
+                <input type="checkbox" id="is_birthday" checked={form.is_birthday}
+                  onChange={e => setForm(f => ({ ...f, is_birthday: e.target.checked }))}
+                  className="w-4 h-4 accent-primary" />
+                <label htmlFor="is_birthday" className="text-xs text-muted-foreground flex items-center gap-1">
+                  🎂 День рождения
+                </label>
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
@@ -3182,6 +3198,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
           <DialogHeader>
             <DialogTitle className="font-display uppercase tracking-wide flex items-center gap-2">
               <span className={`inline-block w-2.5 h-2.5 rounded-full ${colorDot(detailModal?.color || 'blue')}`} />
+              {detailModal?.is_birthday && <span title="День рождения">🎂</span>}
               {detailModal?.title}
             </DialogTitle>
           </DialogHeader>

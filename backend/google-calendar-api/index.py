@@ -243,7 +243,7 @@ def handler(event: dict, context) -> dict:
                 cur.execute(f"""
                     SELECT id, title, description, status, due_date, due_time, all_day, updated_at
                     FROM {SCHEMA}.tasks
-                    WHERE is_archived=FALSE AND due_date BETWEEN %s AND %s
+                    WHERE is_archived=FALSE AND is_birthday=FALSE AND due_date BETWEEN %s AND %s
                       AND (author_id=%s OR assignee_id=%s)
                 """, (date_from, date_to, user_id, user_id))
                 tasks = cur.fetchall()

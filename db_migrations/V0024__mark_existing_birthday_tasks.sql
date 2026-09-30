@@ -1,0 +1,1 @@
+UPDATE t_p34673685_special_systems_proj.tasks SET is_birthday=TRUE WHERE id IN (16,17,18);

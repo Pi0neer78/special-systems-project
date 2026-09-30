@@ -99,7 +99,7 @@ TASK_SELECT = f"""
     SELECT t.id, t.title, t.description, t.status, t.color,
            t.due_date, t.due_time, t.all_day, t.repeat_rule, t.repeat_until,
            t.author_id, t.assignee_id, t.created_at, t.updated_at,
-           t.is_archived, t.archived_at,
+           t.is_archived, t.archived_at, t.is_birthday,
            au_a.full_name AS author_name, au_a.login AS author_login,
            au_s.full_name AS assignee_name, au_s.login AS assignee_login
     FROM {SCHEMA}.tasks t
@@ -243,8 +243,8 @@ def handler(event: dict, context) -> dict:
                     cur.execute(f"""
                         INSERT INTO {SCHEMA}.tasks
                           (title, description, status, color, due_date, due_time, all_day,
-                           repeat_rule, repeat_until, author_id, assignee_id)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                           repeat_rule, repeat_until, author_id, assignee_id, is_birthday)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                         RETURNING id
                     """, (
                         body.get('title', ''), body.get('description'),
@@ -255,6 +255,7 @@ def handler(event: dict, context) -> dict:
                         repeat_rule if repeat_rule in REPEAT_RULES else 'none',
                         body.get('repeat_until'),
                         author_id, body.get('assignee_id'),
+                        bool(body.get('is_birthday', False)),
                     ))
                     new_id = cur.fetchone()['id']
 
@@ -288,6 +289,7 @@ def handler(event: dict, context) -> dict:
                           title=%s, description=%s, status=%s, color=%s,
                           due_date=%s, due_time=%s, all_day=%s,
                           repeat_rule=%s, repeat_until=%s, assignee_id=%s,
+                          is_birthday=%s,
                           updated_at=NOW()
                         WHERE id=%s
                         RETURNING id
@@ -300,6 +302,7 @@ def handler(event: dict, context) -> dict:
                         repeat_rule if repeat_rule in REPEAT_RULES else 'none',
                         body.get('repeat_until'),
                         body.get('assignee_id'),
+                        bool(body.get('is_birthday', False)),
                         rid,
                     ))
                     row = cur.fetchone()
@@ -331,6 +334,8 @@ def handler(event: dict, context) -> dict:
                         fields.append('due_time=%s'); vals.append(body['due_time'])
                     if 'all_day' in body:
                         fields.append('all_day=%s'); vals.append(body['all_day'])
+                    if 'is_birthday' in body:
+                        fields.append('is_birthday=%s'); vals.append(bool(body['is_birthday']))
                     if 'is_archived' in body:
                         if bool(body['is_archived']):
                             fields.append('is_archived=TRUE')
