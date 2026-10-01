@@ -3513,11 +3513,22 @@ function WorkLogin({ onLogin }: { onLogin: (info: AuthInfo) => void }) {
 
   return (
     <div className="min-h-screen flex items-center justify-center grid-bg">
-      <ThemeToggle className="absolute top-4 right-4" />
-      <div className="absolute inset-0 pointer-events-none">
+      <ThemeToggle className="absolute top-4 right-4 z-10" />
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[400px] bg-primary/10 rounded-full blur-[120px]" />
+        <img
+          src="/programmer.jpg"
+          alt=""
+          aria-hidden="true"
+          className="absolute right-0 bottom-0 h-full w-auto max-w-none select-none opacity-50 md:opacity-80 dark:opacity-45 dark:md:opacity-70"
+          style={{
+            WebkitMaskImage: 'radial-gradient(ellipse 55% 60% at 55% 48%, #000 30%, transparent 78%)',
+            maskImage: 'radial-gradient(ellipse 55% 60% at 55% 48%, #000 30%, transparent 78%)',
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/60 via-45% to-transparent" />
       </div>
-      <div className="relative w-full max-w-sm p-8 rounded-2xl bg-card border border-border shadow-2xl">
+      <div className="relative w-full max-w-sm p-8 rounded-2xl bg-card/90 backdrop-blur-sm border border-border shadow-2xl">
         <div className="flex items-center gap-2.5 mb-8">
           <span className="flex items-center justify-center w-9 h-9 rounded-md bg-primary/15 border border-primary/40">
             <Icon name="Briefcase" className="text-primary" size={20} />
