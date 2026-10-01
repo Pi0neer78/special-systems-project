@@ -77,7 +77,10 @@ def handler(event: dict, context) -> dict:
         token = (event.get('headers') or {}).get('X-Admin-Token', '')
         role, user_id, login = decode_token_role(token)
         if role:
-            return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'ok': True, 'role': role, 'user_id': user_id, 'login': login})}
+            result = {'ok': True, 'role': role, 'user_id': user_id, 'login': login}
+            if (event.get('queryStringParameters') or {}).get('refresh') == '1':
+                result['token'] = make_token(login, role, user_id)
+            return {'statusCode': 200, 'headers': CORS, 'body': json.dumps(result)}
         return {'statusCode': 401, 'headers': CORS, 'body': json.dumps({'ok': False})}
 
     # Логин (POST)

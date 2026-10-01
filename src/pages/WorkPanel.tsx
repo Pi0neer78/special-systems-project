@@ -3928,6 +3928,26 @@ export default function WorkPanel() {
   }, []);
 
   useEffect(() => {
+    if (!authInfo) return;
+    const refresh = async () => {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (!token) return;
+      const d = await fetch(`${AUTH_URL}?refresh=1`, { headers: { 'X-Admin-Token': token } })
+        .then(r => r.json()).catch(() => null);
+      if (d?.ok && d.token) localStorage.setItem(TOKEN_KEY, d.token);
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    const interval = setInterval(refresh, 15 * 60 * 1000);
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+    };
+  }, [authInfo]);
+
+  useEffect(() => {
     const originalFetch = window.fetch;
     window.fetch = async (...args) => {
       const res = await originalFetch(...args);
