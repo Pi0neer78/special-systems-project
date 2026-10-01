@@ -1428,6 +1428,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
   const [filterClient, setFilterClient] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterAssignee, setFilterAssignee] = useState('');
+  const [filterUnread, setFilterUnread] = useState(false);
   const [view, setView] = useState<'table' | 'cards' | 'board'>(() => (localStorage.getItem(TICKETS_VIEW_KEY) as 'table' | 'cards' | 'board') || 'table');
   const [dragTicketId, setDragTicketId] = useState<number | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
@@ -1702,7 +1703,9 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
     }
   };
 
-  const ticketsActiveFiltersCount = filterStatuses.size + (filterClient ? 1 : 0) + (filterType ? 1 : 0) + (filterAssignee ? 1 : 0);
+  const ticketsActiveFiltersCount = filterStatuses.size + (filterClient ? 1 : 0) + (filterType ? 1 : 0) + (filterAssignee ? 1 : 0) + (filterUnread ? 1 : 0);
+  const visibleTickets = filterUnread ? tickets.filter(t => (t.unread_count || 0) > 0) : tickets;
+  const unreadTicketsTotal = tickets.filter(t => (t.unread_count || 0) > 0).length;
 
   return (
     <div>
@@ -1720,6 +1723,11 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
             </Button>
           </PopoverTrigger>
           <PopoverContent align="start" className="w-72 space-y-3">
+            <button type="button" onClick={() => setFilterUnread(v => !v)}
+              className={`w-full flex items-center justify-between h-8 px-3 rounded-md border text-xs transition-colors ${filterUnread ? 'border-primary bg-primary/10 text-foreground' : 'border-border bg-secondary/40 text-muted-foreground hover:text-foreground'}`}>
+              <span className="flex items-center gap-1.5"><Icon name="MessageCircle" size={13} /> Только с непрочитанными</span>
+              <span className="px-1.5 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-4">{unreadTicketsTotal}</span>
+            </button>
             <div>
               <div className="text-xs font-medium text-muted-foreground mb-1.5">Статус</div>
               <div className="flex flex-wrap gap-1">
@@ -1816,14 +1824,14 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
             )}
           </PopoverContent>
         </Popover>
-        <span className="ml-auto text-xs text-muted-foreground self-center">{tickets.length} заявок</span>
+        <span className="ml-auto text-xs text-muted-foreground self-center">{visibleTickets.length} заявок</span>
       </div>
 
       {loading ? (
         <div className="flex items-center justify-center h-40 text-muted-foreground">
           <Icon name="Loader" size={18} className="animate-spin mr-2" /> Загрузка...
         </div>
-      ) : tickets.length === 0 ? (
+      ) : visibleTickets.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-40 text-muted-foreground gap-2">
           <Icon name="TicketCheck" size={36} className="opacity-20" />
           <p className="text-sm">Заявок не найдено</p>
@@ -1843,7 +1851,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
               </tr>
             </thead>
             <tbody>
-              {tickets.map(t => {
+              {visibleTickets.map(t => {
                 const st = STATUS_LABELS[t.status] || STATUS_LABELS.new;
                 const pr = PRIORITY_LABELS[t.priority] || PRIORITY_LABELS.medium;
                 const overdue = isOverdue(t);
@@ -1903,7 +1911,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
         </div>
       ) : view === 'cards' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {tickets.map(t => {
+          {visibleTickets.map(t => {
             const st = STATUS_LABELS[t.status] || STATUS_LABELS.new;
             const pr = PRIORITY_LABELS[t.priority] || PRIORITY_LABELS.medium;
             const overdue = isOverdue(t);
@@ -1950,7 +1958,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
       ) : (
         <div className="flex gap-3 overflow-x-auto pb-2">
           {STATUSES_LIST.map(col => {
-            const colTickets = tickets.filter(t => t.status === col.value);
+            const colTickets = visibleTickets.filter(t => t.status === col.value);
             const stMeta = STATUS_LABELS[col.value];
             const isOver = dragOverStatus === col.value;
             return (
