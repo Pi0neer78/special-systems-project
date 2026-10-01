@@ -407,10 +407,18 @@ def handler(event: dict, context) -> dict:
                 conn.close()
                 return resp(200, {'count': count})
 
+            if is_staff:
+                unread_sql = f"""(SELECT COUNT(*) FROM {SCHEMA}.ticket_messages m
+                    WHERE m.ticket_id = t.id AND m.sender_type = 'client'
+                      AND m.id > COALESCE((SELECT r.last_read_message_id FROM {SCHEMA}.ticket_reads r
+                                           WHERE r.ticket_id = t.id AND r.staff_id = {int(admin_user_id)}), 0)) AS unread_count"""
+            else:
+                unread_sql = "0 AS unread_count"
             cur.execute(f"""
                 SELECT t.*,
                        c.name as client_name,
-                       u.full_name as assignee_name, u.login as assignee_login
+                       u.full_name as assignee_name, u.login as assignee_login,
+                       {unread_sql}
                 FROM {SCHEMA}.tickets t
                 JOIN {SCHEMA}.clients c ON c.id = t.client_id
                 LEFT JOIN {SCHEMA}.admin_users u ON u.id = t.assignee_id
@@ -791,6 +799,16 @@ def handler(event: dict, context) -> dict:
                 ORDER BY created_at ASC
             """, (ticket_id,))
             rows = cur.fetchall()
+            if is_staff:
+                cur.execute(f"""
+                    INSERT INTO {SCHEMA}.ticket_reads (ticket_id, staff_id, last_read_message_id)
+                    SELECT %s, %s, COALESCE(MAX(id), 0) FROM {SCHEMA}.ticket_messages
+                    WHERE ticket_id = %s AND sender_type = 'client'
+                    ON CONFLICT (ticket_id, staff_id) DO UPDATE
+                    SET last_read_message_id = GREATEST({SCHEMA}.ticket_reads.last_read_message_id, EXCLUDED.last_read_message_id),
+                        updated_at = now()
+                """, (ticket_id, admin_user_id, ticket_id))
+                conn.commit()
             cur.close()
             conn.close()
             return resp(200, rows)

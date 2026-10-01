@@ -48,11 +48,15 @@ export default function TicketChat({
   ticketId,
   authHeader,
   mySenderType,
+  onLoaded,
 }: {
   ticketId: number;
   authHeader: Record<string, string>;
   mySenderType: 'client' | 'staff';
+  onLoaded?: () => void;
 }) {
+  const onLoadedRef = useRef(onLoaded);
+  onLoadedRef.current = onLoaded;
   const [messages, setMessages] = useState<TicketMessage[]>([]);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -66,7 +70,7 @@ export default function TicketChat({
   const load = useCallback(async () => {
     const data = await fetch(`${TICKETS_URL}?resource=ticket-messages&ticket_id=${ticketId}`, { headers: authHeader })
       .then(r => r.json()).catch(() => null);
-    if (Array.isArray(data)) setMessages(data);
+    if (Array.isArray(data)) { setMessages(data); onLoadedRef.current?.(); }
   }, [ticketId, authHeader]);
 
   useEffect(() => {

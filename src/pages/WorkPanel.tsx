@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useRef, useMemo, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import Icon from '@/components/ui/icon';
@@ -1390,6 +1390,7 @@ type Ticket = {
   assignee_id: number | null;
   assignee_name: string | null;
   assignee_login: string | null;
+  unread_count?: number;
   is_archived?: boolean;
   archived_at?: string | null;
 };
@@ -1408,6 +1409,16 @@ function isOverdue(t: Ticket) {
 const PRIORITY_COLOR: Record<string, string> = { low: 'gray', medium: 'blue', high: 'yellow', urgent: 'red' };
 const TICKETS_VIEW_KEY = 'wp_tickets_view';
 const TICKETS_ARCHIVE_DAYS_KEY = 'wp_tickets_archive_days';
+
+function UnreadBadge({ n, className = '' }: { n?: number; className?: string }) {
+  if (!n || n <= 0) return null;
+  return (
+    <span title={`Непрочитанных сообщений от клиента: ${n}`}
+      className={`inline-flex items-center gap-0.5 ml-1.5 px-1.5 h-4 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none align-middle ${className}`}>
+      <Icon name="MessageCircle" size={9} /> {n}
+    </span>
+  );
+}
 
 function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { token: string; isAdmin: boolean; openTicketId?: number | null; onTicketOpened?: () => void }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -1447,22 +1458,26 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [detailModal, setDetailModal] = useState<Ticket | null>(null);
+  const [detailTab, setDetailTab] = useState('info');
+  const detailId = detailModal?.id;
+  useEffect(() => { setDetailTab('info'); }, [detailId]);
   const [confirmDelete, setConfirmDelete] = useState<Ticket | null>(null);
   const [createModal, setCreateModal] = useState(false);
   const [createForm, setCreateForm] = useState({ client_id: '', priority: 'medium', problem_type: '', description: '', deadline: '', extra_info: '', assignee_id: '' });
   const [creating, setCreating] = useState(false);
 
   const apiHeaders = { 'X-Admin-Token': token };
+  const chatAuthHeader = useMemo(() => ({ 'X-Admin-Token': token }), [token]);
 
-  const load = async () => {
-    setLoading(true);
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     const params = new URLSearchParams({ resource: 'tickets' });
     if (filterStatuses.size > 0) params.set('status', [...filterStatuses].join(','));
     if (filterClient) params.set('client_id', filterClient);
     if (filterType) params.set('problem_type', filterType);
     if (filterAssignee) params.set('assignee_id', filterAssignee);
     const data = await fetch(`${TICKETS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json());
-    setLoading(false);
+    if (!silent) setLoading(false);
     if (Array.isArray(data)) setTickets(data);
   };
 
@@ -1575,7 +1590,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
   useEffect(() => { loadMeta(); loadArchivedCount(); }, []);
   useEffect(() => { load(); }, [filterStatuses, filterClient, filterType, filterAssignee]);
   useEffect(() => {
-    const onRefresh = () => load();
+    const onRefresh = () => load(true);
     window.addEventListener('tickets-refresh', onRefresh);
     return () => window.removeEventListener('tickets-refresh', onRefresh);
   }, [filterStatuses, filterClient, filterType, filterAssignee]);
@@ -1747,7 +1762,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
             )}
           </PopoverContent>
         </Popover>
-        <button onClick={load} className="h-8 px-3 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+        <button onClick={() => load()} className="h-8 px-3 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
           <Icon name="RefreshCw" size={12} />
         </button>
         <div className="flex items-center gap-0.5 bg-secondary/30 border border-border rounded-md p-0.5 h-8">
@@ -1836,7 +1851,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
                   <tr key={t.id} className={`border-b border-border/50 transition-colors align-top ${overdue ? 'bg-red-500/8 hover:bg-red-500/12' : 'hover:bg-secondary/30'}`}>
                     <td className="px-3 py-3 text-xs text-muted-foreground">#{t.id}</td>
                     <td className="px-3 py-3">
-                      <div className="font-medium break-words">{t.client_name}</div>
+                      <div className="font-medium break-words">{t.client_name}<UnreadBadge n={t.unread_count} /></div>
                       <div className="text-xs text-muted-foreground break-words">{t.problem_type}</div>
                     </td>
                     <td className="px-3 py-3">
@@ -1896,7 +1911,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
               <div key={t.id} className={`relative rounded-lg border p-3.5 flex flex-col gap-2 shadow-sm transition-transform hover:-translate-y-0.5 hover:shadow-md ${colorSticky(PRIORITY_COLOR[t.priority] || 'blue')} ${overdue ? 'ring-1 ring-red-500/40' : ''}`}>
                 <div className="flex items-start justify-between gap-2">
                   <button className="text-left font-medium text-sm break-words hover:text-primary transition-colors" onClick={() => setDetailModal(t)}>
-                    #{t.id} · {t.client_name}
+                    #{t.id} · {t.client_name}<UnreadBadge n={t.unread_count} />
                   </button>
                   <div className="flex gap-0.5 shrink-0">
                     <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" onClick={() => openEdit(t)} title="Редактировать">
@@ -1969,7 +1984,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
                         className={`rounded-lg border p-3 flex flex-col gap-1.5 cursor-grab active:cursor-grabbing shadow-sm transition-all ${colorSticky(PRIORITY_COLOR[t.priority] || 'blue')} ${overdue ? 'ring-1 ring-red-500/40' : ''} ${dragging ? 'opacity-40' : 'opacity-100'}`}>
                         <div className="flex items-start justify-between gap-1.5">
                           <button className="text-left font-medium text-sm break-words hover:text-primary transition-colors" onClick={() => setDetailModal(t)}>
-                            #{t.id} · {t.client_name}
+                            #{t.id} · {t.client_name}<UnreadBadge n={t.unread_count} />
                           </button>
                           <div className="flex gap-0.5 shrink-0">
                             <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" onClick={() => openEdit(t)} title="Редактировать">
@@ -2085,6 +2100,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
             const st = STATUS_LABELS[t.status] || STATUS_LABELS.new;
             const pr = PRIORITY_LABELS[t.priority] || PRIORITY_LABELS.medium;
             const overdue = isOverdue(t);
+            const unreadNow = tickets.find(x => x.id === t.id)?.unread_count ?? t.unread_count;
             const fmt = (v: string) => new Date(v).toLocaleString('ru', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
             const infoCell = (icon: string, label: string, value: ReactNode) => (
               <div className="flex items-start gap-2 rounded-md bg-secondary/30 px-3 py-2">
@@ -2102,10 +2118,10 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
                   <span className={`inline-flex items-center gap-1.5 font-medium px-2.5 py-1 rounded-full bg-secondary/40 ${pr.color}`}><Icon name="Flag" size={13} /> {pr.label}</span>
                   {overdue && <span className="text-red-500 font-bold text-xs">⚠ Просрочена</span>}
                 </div>
-                <Tabs key={t.id} defaultValue="info" className="flex flex-col min-h-0 flex-1">
+                <Tabs key={t.id} value={detailTab} onValueChange={setDetailTab} className="flex flex-col min-h-0 flex-1">
                   <TabsList className="grid grid-cols-3 w-full">
                     <TabsTrigger value="info" className="gap-1.5"><Icon name="FileText" size={13} /> Описание</TabsTrigger>
-                    <TabsTrigger value="chat" className="gap-1.5"><Icon name="MessageCircle" size={13} /> Переписка</TabsTrigger>
+                    <TabsTrigger value="chat" className="gap-1.5"><Icon name="MessageCircle" size={13} /> Переписка{detailTab !== 'chat' && <UnreadBadge n={unreadNow} />}</TabsTrigger>
                     <TabsTrigger value="history" className="gap-1.5"><Icon name="History" size={13} /> История</TabsTrigger>
                   </TabsList>
                   <TabsContent value="info" className="mt-3 h-[min(480px,56vh)] overflow-y-auto pr-1 space-y-3">
@@ -2136,7 +2152,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
                     </div>
                   </TabsContent>
                   <TabsContent value="chat" className="mt-3 h-[min(480px,56vh)] overflow-y-auto">
-                    <TicketChat ticketId={t.id} authHeader={{ 'X-Admin-Token': token }} mySenderType="staff" />
+                    <TicketChat ticketId={t.id} authHeader={chatAuthHeader} mySenderType="staff" onLoaded={() => load(true)} />
                   </TabsContent>
                   <TabsContent value="history" className="mt-3 h-[min(480px,56vh)] overflow-y-auto">
                     <TicketHistory key={`${t.id}-${t.status_changed_at}-${t.assignee_id}-${t.result}`} ticketUrl={`${TICKETS_URL}?resource=ticket-history&id=${t.id}`} token={token} />
@@ -3915,6 +3931,7 @@ function NewClientMessageNotifier({ token }: { token: string }) {
       const fresh = data.filter((m: ClientMessageRow) => !seenRef.current!.has(m.id));
       seenRef.current = ids;
       if (fresh.length === 0) return;
+      window.dispatchEvent(new Event('tickets-refresh'));
 
       audioRef.current?.play().catch(() => {});
 
