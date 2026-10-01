@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import ThemeToggle from '@/components/ThemeToggle';
@@ -2067,7 +2068,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
 
       {/* Модал просмотра */}
       <Dialog open={!!detailModal} onOpenChange={() => setDetailModal(null)}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-3xl max-h-[92vh] flex flex-col gap-3">
           <DialogHeader>
             <DialogTitle className="font-display uppercase tracking-wide flex items-center gap-2 pr-6">
               <span>Заявка #{detailModal?.id} — {detailModal?.client_name}</span>
@@ -2084,40 +2085,64 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
             const st = STATUS_LABELS[t.status] || STATUS_LABELS.new;
             const pr = PRIORITY_LABELS[t.priority] || PRIORITY_LABELS.medium;
             const overdue = isOverdue(t);
+            const fmt = (v: string) => new Date(v).toLocaleString('ru', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+            const infoCell = (icon: string, label: string, value: ReactNode) => (
+              <div className="flex items-start gap-2 rounded-md bg-secondary/30 px-3 py-2">
+                <Icon name={icon} fallback="Circle" size={14} className="text-muted-foreground mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-[11px] text-muted-foreground leading-tight">{label}</div>
+                  <div className="text-sm break-words">{value}</div>
+                </div>
+              </div>
+            );
             return (
-              <div className="space-y-3 text-sm">
+              <div className="flex flex-col min-h-0 flex-1 gap-3 text-sm">
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className={`flex items-center gap-1.5 font-medium ${st.color}`}><Icon name={st.icon} size={14} /> {st.label}</span>
-                  <span className={`font-medium ${pr.color}`}>{pr.label}</span>
+                  <span className={`inline-flex items-center gap-1.5 font-medium px-2.5 py-1 rounded-full bg-secondary/40 ${st.color}`}><Icon name={st.icon} size={14} /> {st.label}</span>
+                  <span className={`inline-flex items-center gap-1.5 font-medium px-2.5 py-1 rounded-full bg-secondary/40 ${pr.color}`}><Icon name="Flag" size={13} /> {pr.label}</span>
                   {overdue && <span className="text-red-500 font-bold text-xs">⚠ Просрочена</span>}
                 </div>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div><span className="text-muted-foreground">Подана:</span> {new Date(t.submitted_at).toLocaleString('ru')}</div>
-                  <div><span className="text-muted-foreground">Тип:</span> {t.problem_type}</div>
-                  {t.deadline && <div><span className="text-muted-foreground">Решить до:</span> <span className={overdue ? 'text-red-400 font-semibold' : ''}>{new Date(t.deadline).toLocaleString('ru')}</span></div>}
-                  {t.resolved_at && <div><span className="text-muted-foreground">Дата решения:</span> <span className="text-green-400">{new Date(t.resolved_at).toLocaleString('ru')}</span></div>}
-                  {(t.assignee_name || t.assignee_login) && <div><span className="text-muted-foreground">Ответственный:</span> {t.assignee_name || t.assignee_login}</div>}
-                  <div><span className="text-muted-foreground">Статус изменён:</span> {new Date(t.status_changed_at).toLocaleString('ru')}</div>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">Описание:</p>
-                  <p className="bg-secondary/30 rounded-md p-3 whitespace-pre-wrap text-sm">{t.description}</p>
-                </div>
-                {t.extra_info && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Доп. информация:</p>
-                    <p className="bg-secondary/30 rounded-md p-3 whitespace-pre-wrap text-sm">{t.extra_info}</p>
-                  </div>
-                )}
-                {t.result && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-1">Результат:</p>
-                    <p className="bg-green-500/10 border border-green-500/20 rounded-md p-3 whitespace-pre-wrap text-sm text-green-300">{t.result}</p>
-                  </div>
-                )}
-                <TicketHistory key={`${t.id}-${t.status_changed_at}-${t.assignee_id}-${t.result}`} ticketUrl={`${TICKETS_URL}?resource=ticket-history&id=${t.id}`} token={token} />
-                <TicketChat ticketId={t.id} authHeader={{ 'X-Admin-Token': token }} mySenderType="staff" />
-                <div className="flex gap-3 pt-1">
+                <Tabs key={t.id} defaultValue="info" className="flex flex-col min-h-0 flex-1">
+                  <TabsList className="grid grid-cols-3 w-full">
+                    <TabsTrigger value="info" className="gap-1.5"><Icon name="FileText" size={13} /> Описание</TabsTrigger>
+                    <TabsTrigger value="chat" className="gap-1.5"><Icon name="MessageCircle" size={13} /> Переписка</TabsTrigger>
+                    <TabsTrigger value="history" className="gap-1.5"><Icon name="History" size={13} /> История</TabsTrigger>
+                  </TabsList>
+                  <TabsContent value="info" className="mt-3 h-[min(480px,56vh)] overflow-y-auto pr-1 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {infoCell('Building2', 'Клиент', t.client_name)}
+                      {infoCell('Tag', 'Тип проблемы', t.problem_type)}
+                      {infoCell('UserCheck', 'Ответственный', (t.assignee_name || t.assignee_login) || <span className="text-muted-foreground">Не назначен</span>)}
+                      {infoCell('CalendarPlus', 'Подана', fmt(t.submitted_at))}
+                      {infoCell('CalendarClock', 'Решить до', t.deadline ? <span className={overdue ? 'text-red-400 font-semibold' : ''}>{fmt(t.deadline)}</span> : <span className="text-muted-foreground">Срок не указан</span>)}
+                      {infoCell('RefreshCw', 'Статус изменён', fmt(t.status_changed_at))}
+                      {t.resolved_at && infoCell('CheckCircle', 'Дата решения', <span className="text-green-400">{fmt(t.resolved_at)}</span>)}
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5"><Icon name="FileText" size={13} /> Описание проблемы</p>
+                      <p className="bg-secondary/30 rounded-md p-3 whitespace-pre-wrap break-words text-sm leading-relaxed">{t.description}</p>
+                    </div>
+                    {t.extra_info && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5"><Icon name="Info" size={13} /> Дополнительная информация</p>
+                        <p className="bg-secondary/30 rounded-md p-3 whitespace-pre-wrap break-words text-sm leading-relaxed">{t.extra_info}</p>
+                      </div>
+                    )}
+                    <div>
+                      <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1.5"><Icon name="CheckCircle" size={13} /> Результат</p>
+                      {t.result
+                        ? <p className="bg-green-500/10 border border-green-500/20 rounded-md p-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-green-300">{t.result}</p>
+                        : <p className="bg-secondary/20 rounded-md p-3 text-xs text-muted-foreground">Результат пока не указан</p>}
+                    </div>
+                  </TabsContent>
+                  <TabsContent value="chat" className="mt-3 h-[min(480px,56vh)] overflow-y-auto">
+                    <TicketChat ticketId={t.id} authHeader={{ 'X-Admin-Token': token }} mySenderType="staff" />
+                  </TabsContent>
+                  <TabsContent value="history" className="mt-3 h-[min(480px,56vh)] overflow-y-auto">
+                    <TicketHistory key={`${t.id}-${t.status_changed_at}-${t.assignee_id}-${t.result}`} ticketUrl={`${TICKETS_URL}?resource=ticket-history&id=${t.id}`} token={token} />
+                  </TabsContent>
+                </Tabs>
+                <div className="flex gap-3 border-t border-border/60 pt-3">
                   {isAdmin && (
                     <Button variant="outline" onClick={() => setConfirmDelete(t)}
                       className="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive">

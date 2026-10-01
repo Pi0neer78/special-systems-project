@@ -90,7 +90,7 @@ export default function TicketHistory({ ticketUrl, token }: { ticketUrl: string;
       ) : rows.length === 0 ? (
         <p className="text-xs text-muted-foreground">Изменений пока нет</p>
       ) : (
-        <ul className="bg-secondary/30 rounded-md p-3 space-y-2 max-h-52 overflow-y-auto">
+        <ul className="bg-secondary/30 rounded-md p-3 space-y-2">
           {rows.map(r => (
             <li key={r.id} className="flex items-start gap-2 text-xs">
               <Icon name={FIELD_ICONS[r.field] || 'Circle'} size={13} className="text-primary mt-0.5 shrink-0" />
