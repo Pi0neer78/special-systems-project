@@ -48,12 +48,13 @@ function LoginDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
           src="/accountant.jpg"
           alt=""
           aria-hidden="true"
-          className="absolute -right-10 -top-6 h-64 w-auto max-w-none pointer-events-none select-none opacity-30 dark:opacity-25"
+          className="absolute -right-24 -bottom-16 h-[115%] w-auto max-w-none pointer-events-none select-none opacity-60 dark:opacity-45"
           style={{
-            WebkitMaskImage: 'radial-gradient(ellipse 50% 55% at 60% 40%, #000 25%, transparent 75%)',
-            maskImage: 'radial-gradient(ellipse 50% 55% at 60% 40%, #000 25%, transparent 75%)',
+            WebkitMaskImage: 'radial-gradient(ellipse 55% 60% at 55% 45%, #000 30%, transparent 78%)',
+            maskImage: 'radial-gradient(ellipse 55% 60% at 55% 45%, #000 30%, transparent 78%)',
           }}
         />
+        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/70 via-50% to-transparent pointer-events-none" />
         <DialogHeader className="relative">
           <DialogTitle className="font-display uppercase tracking-wide">Вход в личный кабинет</DialogTitle>
         </DialogHeader>
