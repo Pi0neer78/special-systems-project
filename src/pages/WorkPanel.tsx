@@ -3927,6 +3927,24 @@ export default function WorkPanel() {
     return () => document.removeEventListener('mousedown', close);
   }, []);
 
+  useEffect(() => {
+    const originalFetch = window.fetch;
+    window.fetch = async (...args) => {
+      const res = await originalFetch(...args);
+      if (res.status === 401) {
+        const init = args[1];
+        const h = init?.headers as Record<string, string> | undefined;
+        if (h && h['X-Admin-Token'] && localStorage.getItem(TOKEN_KEY)) {
+          localStorage.removeItem(TOKEN_KEY);
+          setAuthInfo(null);
+          toast.error('Сессия истекла, войдите заново');
+        }
+      }
+      return res;
+    };
+    return () => { window.fetch = originalFetch; };
+  }, []);
+
   const logout = () => { localStorage.removeItem(TOKEN_KEY); setAuthInfo(null); };
 
   if (!authInfo) return <WorkLogin onLogin={setAuthInfo} />;
