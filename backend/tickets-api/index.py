@@ -723,7 +723,7 @@ def handler(event: dict, context) -> dict:
     if resource == 'client-messages' and method == 'GET':
         admin_token = headers.get('X-Admin-Token', '')
         admin_user_id, admin_role, _ = verify_admin_token(admin_token) if admin_token else (None, None, None)
-        if not admin_user_id:
+        if admin_user_id is None:
             return resp(401, {'error': 'Не авторизован'})
         conn = get_conn()
         cur = conn.cursor(cursor_factory=RealDictCursor)

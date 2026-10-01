@@ -3986,10 +3986,17 @@ export default function WorkPanel() {
       if (res.status === 401) {
         const init = args[1];
         const h = init?.headers as Record<string, string> | undefined;
-        if (h && h['X-Admin-Token'] && localStorage.getItem(TOKEN_KEY)) {
-          localStorage.removeItem(TOKEN_KEY);
-          setAuthInfo(null);
-          toast.error('Сессия истекла, войдите заново');
+        const current = localStorage.getItem(TOKEN_KEY);
+        if (h && h['X-Admin-Token'] && current && h['X-Admin-Token'] === current) {
+          originalFetch(AUTH_URL, { headers: { 'X-Admin-Token': current } })
+            .then(r => {
+              if (r.status === 401 && localStorage.getItem(TOKEN_KEY) === current) {
+                localStorage.removeItem(TOKEN_KEY);
+                setAuthInfo(null);
+                toast.error('Сессия истекла, войдите заново');
+              }
+            })
+            .catch(() => {});
         }
       }
       return res;
