@@ -1583,8 +1583,21 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
   useEffect(() => {
     if (!openTicketId || loading) return;
     const found = tickets.find(x => x.id === openTicketId);
-    if (found) { setDetailModal(found); onTicketOpened?.(); }
+    if (found) { setDetailModal(found); onTicketOpened?.(); return; }
+    fetch(`${TICKETS_URL}?resource=tickets&id=${openTicketId}`, { headers: { 'X-Admin-Token': token } })
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.id) setDetailModal(d);
+        else toast.error('Заявка не найдена или нет доступа');
+      })
+      .catch(() => toast.error('Не удалось открыть заявку'))
+      .finally(() => onTicketOpened?.());
   }, [openTicketId, tickets, loading]);
+
+  const copyTicketLink = (id: number) => {
+    const url = `${window.location.origin}/work-panel?ticket=${id}`;
+    navigator.clipboard.writeText(url).then(() => toast.success('Ссылка на заявку скопирована')).catch(() => toast.error('Не удалось скопировать ссылку'));
+  };
 
   const openEdit = (t: Ticket) => {
     setEditForm({
@@ -2055,7 +2068,15 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
       <Dialog open={!!detailModal} onOpenChange={() => setDetailModal(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="font-display uppercase tracking-wide">Заявка #{detailModal?.id} — {detailModal?.client_name}</DialogTitle>
+            <DialogTitle className="font-display uppercase tracking-wide flex items-center gap-2 pr-6">
+              <span>Заявка #{detailModal?.id} — {detailModal?.client_name}</span>
+              {detailModal && (
+                <button type="button" onClick={() => copyTicketLink(detailModal.id)} title="Скопировать ссылку на заявку"
+                  className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                  <Icon name="Link" size={15} />
+                </button>
+              )}
+            </DialogTitle>
           </DialogHeader>
           {detailModal && (() => {
             const t = detailModal;
@@ -3899,10 +3920,14 @@ export default function WorkPanel() {
   const VALID_TABS: Tab[] = ['credentials', 'updates', 'tickets', 'tasks', 'admin-users', 'admin-clients', 'admin-databases'];
   const [tab, setTabState] = useState<Tab>(() => {
     const saved = localStorage.getItem('wp_active_tab') as Tab | null;
+    if (new URLSearchParams(window.location.search).get('ticket')) return 'tickets';
     return saved && VALID_TABS.includes(saved) ? saved : 'credentials';
   });
   const setTab = (t: Tab) => { setTabState(t); localStorage.setItem('wp_active_tab', t); };
-  const [openTicketId, setOpenTicketId] = useState<number | null>(null);
+  const [openTicketId, setOpenTicketId] = useState<number | null>(() => {
+    const v = Number(new URLSearchParams(window.location.search).get('ticket'));
+    return v > 0 ? v : null;
+  });
   const handleOpenTicket = (id: number) => { setTab('tickets'); setOpenTicketId(id); window.dispatchEvent(new Event('tickets-refresh')); };
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [configDbs, setConfigDbs] = useState<import('@/pages/Admin').ConfigDB[]>([]);
@@ -4059,7 +4084,7 @@ export default function WorkPanel() {
         )}
         {activeTab === 'tickets' && (
           <div className="container py-6">
-            <TicketsSection token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={authInfo.role === 'admin'} openTicketId={openTicketId} onTicketOpened={() => setOpenTicketId(null)} />
+            <TicketsSection token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={authInfo.role === 'admin'} openTicketId={openTicketId} onTicketOpened={() => { setOpenTicketId(null); if (window.location.search.includes('ticket=')) window.history.replaceState(null, '', window.location.pathname); }} />
           </div>
         )}
         {activeTab === 'tasks' && (
