@@ -3974,6 +3974,7 @@ export default function WorkPanel() {
 
   if (!authInfo) return <WorkLogin onLogin={setAuthInfo} />;
   const isAdminRole = authInfo.role === 'admin';
+  const activeTab: Tab = !isAdminRole && tab.startsWith('admin-') ? 'credentials' : tab;
 
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'credentials', label: 'Учётные данные', icon: 'Lock' },
@@ -4007,7 +4008,7 @@ export default function WorkPanel() {
             {tabs.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all ${
-                  tab === t.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
+                  activeTab === t.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
                 }`}>
                 <Icon name={t.icon} size={14} />
                 <span className="hidden sm:inline">{t.label}</span>
@@ -4027,7 +4028,7 @@ export default function WorkPanel() {
                     {ADMIN_TABS.map(t => (
                       <button key={t.id} onClick={() => { setTab(t.id); setAdminMenuOpen(false); }}
                         className={`flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left transition-colors ${
-                          tab === t.id ? 'text-primary bg-primary/10' : 'hover:bg-secondary/60'
+                          activeTab === t.id ? 'text-primary bg-primary/10' : 'hover:bg-secondary/60'
                         }`}>
                         <Icon name={t.icon} size={14} />
                         {t.label}
@@ -4050,33 +4051,33 @@ export default function WorkPanel() {
       </header>
 
       <main className="flex-1 overflow-hidden relative z-10">
-        {tab === 'credentials' && <CredentialsSection isAdmin={authInfo.role === 'admin'} />}
-        {tab === 'updates' && (
+        {activeTab === 'credentials' && <CredentialsSection isAdmin={authInfo.role === 'admin'} />}
+        {activeTab === 'updates' && (
           <div className="container py-6">
             <UpdatesSection />
           </div>
         )}
-        {tab === 'tickets' && (
+        {activeTab === 'tickets' && (
           <div className="container py-6">
             <TicketsSection token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={authInfo.role === 'admin'} openTicketId={openTicketId} onTicketOpened={() => setOpenTicketId(null)} />
           </div>
         )}
-        {tab === 'tasks' && (
+        {activeTab === 'tasks' && (
           <div className="container py-6">
             <TasksSection token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={authInfo.role === 'admin'} />
           </div>
         )}
-        {tab === 'admin-users' && isAdminRole && (
+        {activeTab === 'admin-users' && isAdminRole && (
           <div className="container py-6">
             <UsersSection allClients={allClients} />
           </div>
         )}
-        {tab === 'admin-clients' && isAdminRole && (
+        {activeTab === 'admin-clients' && isAdminRole && (
           <div className="container py-6">
             <ClientsSection configDbs={configDbs} onClientsChanged={d => setAllClients(d.map(c => ({ id: c.id, name: c.name })))} />
           </div>
         )}
-        {tab === 'admin-databases' && isAdminRole && (
+        {activeTab === 'admin-databases' && isAdminRole && (
           <div className="container py-6">
             <DatabasesSection onLoaded={setConfigDbs} />
           </div>
