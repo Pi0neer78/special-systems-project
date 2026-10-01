@@ -1414,6 +1414,7 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
   const [filterStatuses, setFilterStatuses] = useState<Set<string>>(new Set());
   const [filterClient, setFilterClient] = useState('');
   const [filterType, setFilterType] = useState('');
+  const [filterAssignee, setFilterAssignee] = useState('');
   const [view, setView] = useState<'table' | 'cards' | 'board'>(() => (localStorage.getItem(TICKETS_VIEW_KEY) as 'table' | 'cards' | 'board') || 'table');
   const [dragTicketId, setDragTicketId] = useState<number | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<string | null>(null);
@@ -1446,7 +1447,7 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
   const [detailModal, setDetailModal] = useState<Ticket | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Ticket | null>(null);
   const [createModal, setCreateModal] = useState(false);
-  const [createForm, setCreateForm] = useState({ client_id: '', priority: 'medium', problem_type: '', description: '', deadline: '', extra_info: '' });
+  const [createForm, setCreateForm] = useState({ client_id: '', priority: 'medium', problem_type: '', description: '', deadline: '', extra_info: '', assignee_id: '' });
   const [creating, setCreating] = useState(false);
 
   const apiHeaders = { 'X-Admin-Token': token };
@@ -1457,6 +1458,7 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     if (filterStatuses.size > 0) params.set('status', [...filterStatuses].join(','));
     if (filterClient) params.set('client_id', filterClient);
     if (filterType) params.set('problem_type', filterType);
+    if (filterAssignee) params.set('assignee_id', filterAssignee);
     const data = await fetch(`${TICKETS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json());
     setLoading(false);
     if (Array.isArray(data)) setTickets(data);
@@ -1569,12 +1571,12 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
   };
 
   useEffect(() => { loadMeta(); loadArchivedCount(); }, []);
-  useEffect(() => { load(); }, [filterStatuses, filterClient, filterType]);
+  useEffect(() => { load(); }, [filterStatuses, filterClient, filterType, filterAssignee]);
   useEffect(() => {
     const onRefresh = () => load();
     window.addEventListener('tickets-refresh', onRefresh);
     return () => window.removeEventListener('tickets-refresh', onRefresh);
-  }, [filterStatuses, filterClient, filterType]);
+  }, [filterStatuses, filterClient, filterType, filterAssignee]);
 
   useEffect(() => { if (showArchive) loadArchived(); }, [showArchive]);
 
@@ -1631,13 +1633,13 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
   };
 
   const openCreate = () => {
-    setCreateForm({ client_id: '', priority: 'medium', problem_type: '', description: '', deadline: '', extra_info: '' });
+    setCreateForm({ client_id: '', priority: 'medium', problem_type: '', description: '', deadline: '', extra_info: '', assignee_id: '' });
     setCreateModal(true);
   };
 
   const createTicket = async () => {
-    if (!createForm.client_id || !createForm.problem_type || !createForm.description.trim()) {
-      toast.error('Заполните клиента, тип и описание заявки');
+    if (!createForm.client_id || !createForm.problem_type || !createForm.description.trim() || !createForm.assignee_id) {
+      toast.error('Заполните клиента, тип, описание и ответственного');
       return;
     }
     setCreating(true);
@@ -1646,6 +1648,7 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
       headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
       body: JSON.stringify({
         client_id: Number(createForm.client_id),
+        assignee_id: Number(createForm.assignee_id),
         priority: createForm.priority,
         problem_type: createForm.problem_type,
         description: createForm.description.trim(),
@@ -1663,7 +1666,7 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
     }
   };
 
-  const ticketsActiveFiltersCount = filterStatuses.size + (filterClient ? 1 : 0) + (filterType ? 1 : 0);
+  const ticketsActiveFiltersCount = filterStatuses.size + (filterClient ? 1 : 0) + (filterType ? 1 : 0) + (filterAssignee ? 1 : 0);
 
   return (
     <div>
@@ -1711,6 +1714,16 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
                 {PROBLEM_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </div>
+            {isAdmin && (
+              <div>
+                <div className="text-xs font-medium text-muted-foreground mb-1.5">Ответственный</div>
+                <select value={filterAssignee} onChange={e => setFilterAssignee(e.target.value)}
+                  className="w-full h-8 rounded-md border border-border bg-secondary/40 px-3 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                  <option value="">Все ответственные</option>
+                  {meta?.users.map(u => <option key={u.id} value={String(u.id)}>{u.full_name || u.login}</option>)}
+                </select>
+              </div>
+            )}
           </PopoverContent>
         </Popover>
         <button onClick={load} className="h-8 px-3 text-xs rounded-md border border-border text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
@@ -2132,6 +2145,14 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
                 className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
                 <option value="">— выберите клиента —</option>
                 {meta?.clients.map(c => <option key={c.id} value={String(c.id)}>{c.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Ответственный</label>
+              <select value={createForm.assignee_id} onChange={e => setCreateForm(f => ({ ...f, assignee_id: e.target.value }))}
+                className="w-full h-9 rounded-md border border-border bg-secondary/40 px-3 text-sm text-foreground focus:outline-none focus:ring-1 focus:ring-primary">
+                <option value="">— выберите ответственного —</option>
+                {meta?.users.map(u => <option key={u.id} value={String(u.id)}>{u.full_name || u.login}</option>)}
               </select>
             </div>
             <div className="flex gap-3">

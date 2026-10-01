@@ -458,12 +458,15 @@ def handler(event: dict, context) -> dict:
             extra_info = body.get('extra_info', '').strip() or None
             if not description or not problem_type:
                 return resp(400, {'error': 'Заполните обязательные поля'})
+            new_assignee_id = body.get('assignee_id') if (is_staff and admin_role == 'admin') else None
+            if new_assignee_id in ('', None):
+                new_assignee_id = None
             cur.execute(f"""
                 INSERT INTO {SCHEMA}.tickets
-                  (client_id, priority, problem_type, description, deadline, extra_info, status, status_changed_at)
-                VALUES (%s, %s, %s, %s, %s, %s, 'new', now())
+                  (client_id, priority, problem_type, description, deadline, extra_info, status, status_changed_at, assignee_id)
+                VALUES (%s, %s, %s, %s, %s, %s, 'new', now(), %s)
                 RETURNING *
-            """, (target_client_id, priority, problem_type, description, deadline, extra_info))
+            """, (target_client_id, priority, problem_type, description, deadline, extra_info, new_assignee_id))
             ticket = cur.fetchone()
             conn.commit()
             cur.close()
