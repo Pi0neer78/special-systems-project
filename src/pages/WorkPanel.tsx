@@ -3896,7 +3896,12 @@ const ADMIN_TABS: { id: Tab; label: string; icon: string }[] = [
 
 export default function WorkPanel() {
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
-  const [tab, setTab] = useState<Tab>('credentials');
+  const VALID_TABS: Tab[] = ['credentials', 'updates', 'tickets', 'tasks', 'admin-users', 'admin-clients', 'admin-databases'];
+  const [tab, setTabState] = useState<Tab>(() => {
+    const saved = localStorage.getItem('wp_active_tab') as Tab | null;
+    return saved && VALID_TABS.includes(saved) ? saved : 'credentials';
+  });
+  const setTab = (t: Tab) => { setTabState(t); localStorage.setItem('wp_active_tab', t); };
   const [openTicketId, setOpenTicketId] = useState<number | null>(null);
   const handleOpenTicket = (id: number) => { setTab('tickets'); setOpenTicketId(id); window.dispatchEvent(new Event('tickets-refresh')); };
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
