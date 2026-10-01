@@ -118,6 +118,23 @@ def verify_admin_token(token: str):
     return None, None, None
 
 
+def staff_display_name(cur, user_id):
+    if user_id is None:
+        return None
+    if user_id == 0:
+        return 'Администратор'
+    cur.execute(f"SELECT full_name, login FROM {SCHEMA}.admin_users WHERE id = %s", (user_id,))
+    u = cur.fetchone()
+    return (u['full_name'] or u['login']) if u else None
+
+
+def log_ticket_change(cur, ticket_id, actor_name, field, old_value, new_value):
+    cur.execute(
+        f"INSERT INTO {SCHEMA}.ticket_history (ticket_id, actor_name, field, old_value, new_value) VALUES (%s, %s, %s, %s, %s)",
+        (ticket_id, actor_name, field, old_value, new_value)
+    )
+
+
 def resp(status, body):
     return {'statusCode': status, 'headers': CORS, 'body': json.dumps(body, ensure_ascii=False, default=str)}
 
@@ -468,6 +485,10 @@ def handler(event: dict, context) -> dict:
                 RETURNING *
             """, (target_client_id, priority, problem_type, description, deadline, extra_info, new_assignee_id))
             ticket = cur.fetchone()
+            creator = staff_display_name(cur, admin_user_id) if is_staff else 'Клиент'
+            log_ticket_change(cur, ticket['id'], creator, 'created', None, None)
+            if new_assignee_id is not None:
+                log_ticket_change(cur, ticket['id'], creator, 'assignee', None, staff_display_name(cur, int(new_assignee_id)))
             conn.commit()
             cur.close()
             conn.close()
@@ -504,6 +525,14 @@ def handler(event: dict, context) -> dict:
             body = json.loads(event.get('body') or '{}')
             sets = []
             params = []
+
+            cur.execute(f"""
+                SELECT t.status, t.assignee_id, t.result, t.priority, t.problem_type, t.deadline, t.is_archived,
+                       COALESCE(u.full_name, u.login) AS assignee_name
+                FROM {SCHEMA}.tickets t LEFT JOIN {SCHEMA}.admin_users u ON u.id = t.assignee_id
+                WHERE t.id = %s
+            """, (ticket_id,))
+            old = cur.fetchone()
 
             if 'status' in body and body['status'] in STATUSES:
                 sets.append("status = %s")
@@ -554,6 +583,22 @@ def handler(event: dict, context) -> dict:
             params.append(ticket_id)
             cur.execute(f"UPDATE {SCHEMA}.tickets SET {', '.join(sets)} WHERE id = %s RETURNING *", params)
             ticket = cur.fetchone()
+            if ticket and old:
+                actor = staff_display_name(cur, admin_user_id)
+                if ticket['status'] != old['status']:
+                    log_ticket_change(cur, ticket_id, actor, 'status', old['status'], ticket['status'])
+                if ticket['assignee_id'] != old['assignee_id']:
+                    log_ticket_change(cur, ticket_id, actor, 'assignee', old['assignee_name'], staff_display_name(cur, ticket['assignee_id']))
+                if (ticket['result'] or '') != (old['result'] or ''):
+                    log_ticket_change(cur, ticket_id, actor, 'result', old['result'], ticket['result'])
+                if ticket['priority'] != old['priority']:
+                    log_ticket_change(cur, ticket_id, actor, 'priority', old['priority'], ticket['priority'])
+                if ticket['problem_type'] != old['problem_type']:
+                    log_ticket_change(cur, ticket_id, actor, 'problem_type', old['problem_type'], ticket['problem_type'])
+                if ticket['deadline'] != old['deadline']:
+                    log_ticket_change(cur, ticket_id, actor, 'deadline', old['deadline'].isoformat() if old['deadline'] else None, ticket['deadline'].isoformat() if ticket['deadline'] else None)
+                if ticket['is_archived'] != old['is_archived']:
+                    log_ticket_change(cur, ticket_id, actor, 'archived', None, 'yes' if ticket['is_archived'] else 'no')
             conn.commit()
             cur.close()
             conn.close()
@@ -577,6 +622,7 @@ def handler(event: dict, context) -> dict:
             for r in cur.fetchall():
                 delete_s3_object(r['file_url'])
             cur.execute(f"DELETE FROM {SCHEMA}.ticket_messages WHERE ticket_id = %s", (ticket_id,))
+            cur.execute(f"DELETE FROM {SCHEMA}.ticket_history WHERE ticket_id = %s", (ticket_id,))
             cur.execute(f"DELETE FROM {SCHEMA}.tickets WHERE id = %s RETURNING id", (ticket_id,))
             row = cur.fetchone()
             conn.commit()
@@ -635,6 +681,34 @@ def handler(event: dict, context) -> dict:
                 c.name,
                 db.config_name
         """)
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return resp(200, rows)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # ХРОНИКА ИЗМЕНЕНИЙ ЗАЯВКИ (только сотрудники)
+    # GET ?resource=ticket-history&id=N
+    # Response: [ { id, actor_name, field, old_value, new_value, created_at }, ... ]
+    # ══════════════════════════════════════════════════════════════════════════
+    if resource == 'ticket-history' and method == 'GET':
+        admin_token = headers.get('X-Admin-Token', '')
+        admin_user_id, admin_role, _ = verify_admin_token(admin_token) if admin_token else (None, None, None)
+        if admin_user_id is None:
+            return resp(401, {'error': 'Не авторизован'})
+        ticket_id = int(qs.get('id', 0))
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        if admin_role != 'admin':
+            cur.execute(f"SELECT assignee_id FROM {SCHEMA}.tickets WHERE id = %s", (ticket_id,))
+            t = cur.fetchone()
+            if not t or t['assignee_id'] != admin_user_id:
+                cur.close(); conn.close()
+                return resp(403, {'error': 'Нет доступа к заявке'})
+        cur.execute(
+            f"SELECT id, actor_name, field, old_value, new_value, created_at FROM {SCHEMA}.ticket_history WHERE ticket_id = %s ORDER BY created_at DESC, id DESC",
+            (ticket_id,)
+        )
         rows = cur.fetchall()
         cur.close()
         conn.close()

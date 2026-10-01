@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import ThemeToggle from '@/components/ThemeToggle';
 import TicketChat from '@/components/TicketChat';
+import TicketHistory from '@/components/TicketHistory';
 import workPanelBg from '@/assets/work-panel-bg.jpg';
 import { tryReadStoredKey, pickAndReadKey, pickKeyViaInput, clearKeyFileHandle, isFileSystemAccessSupported } from '@/lib/keyFileStore';
 import {
@@ -2114,6 +2115,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
                     <p className="bg-green-500/10 border border-green-500/20 rounded-md p-3 whitespace-pre-wrap text-sm text-green-300">{t.result}</p>
                   </div>
                 )}
+                <TicketHistory key={`${t.id}-${t.status_changed_at}-${t.assignee_id}-${t.result}`} ticketUrl={`${TICKETS_URL}?resource=ticket-history&id=${t.id}`} token={token} />
                 <TicketChat ticketId={t.id} authHeader={{ 'X-Admin-Token': token }} mySenderType="staff" />
                 <div className="flex gap-3 pt-1">
                   {isAdmin && (
