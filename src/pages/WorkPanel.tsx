@@ -3745,7 +3745,7 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
 
 const TICKET_POLL_MS = 60 * 1000;
 
-function NewTicketNotifier({ token }: { token: string }) {
+function NewTicketNotifier({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const seenRef = useRef<Set<number> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -3778,7 +3778,7 @@ function NewTicketNotifier({ token }: { token: string }) {
       audioRef.current?.play().catch(() => {});
 
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-        const utter = new SpeechSynthesisUtterance('Обнаружена новая заявка');
+        const utter = new SpeechSynthesisUtterance(isAdmin ? 'Обнаружена новая заявка' : 'Вам назначена заявка');
         utter.lang = 'ru-RU';
         window.speechSynthesis.speak(utter);
       }
@@ -3786,7 +3786,9 @@ function NewTicketNotifier({ token }: { token: string }) {
       window.dispatchEvent(new Event('tickets-refresh'));
 
       fresh.forEach((t: Ticket) => {
-        const title = fresh.length === 1 ? 'Новая заявка' : `Новых заявок: ${fresh.length}`;
+        const title = isAdmin
+          ? (fresh.length === 1 ? 'Новая заявка' : `Новых заявок: ${fresh.length}`)
+          : (fresh.length === 1 ? 'Вам назначена заявка' : `Вам назначено заявок: ${fresh.length}`);
         const body = `${t.client_name} — ${t.problem_type}`;
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
           const n = new Notification(title, { body, icon: '/favicon.svg', tag: `ticket-${t.id}` });
@@ -3794,7 +3796,9 @@ function NewTicketNotifier({ token }: { token: string }) {
         }
       });
 
-      toast(fresh.length === 1 ? 'Новая заявка от клиента' : `Новых заявок: ${fresh.length}`, {
+      toast(isAdmin
+        ? (fresh.length === 1 ? 'Новая заявка от клиента' : `Новых заявок: ${fresh.length}`)
+        : (fresh.length === 1 ? 'Вам назначена заявка' : `Вам назначено заявок: ${fresh.length}`), {
         description: fresh.length === 1 ? `${fresh[0].client_name} — ${fresh[0].problem_type}` : undefined,
       });
     };
@@ -3802,7 +3806,7 @@ function NewTicketNotifier({ token }: { token: string }) {
     check();
     const interval = setInterval(check, TICKET_POLL_MS);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [token]);
+  }, [token, isAdmin]);
 
   return null;
 }
@@ -4027,7 +4031,7 @@ export default function WorkPanel() {
       </main>
 
       <TaskReminder token={localStorage.getItem(TOKEN_KEY) || ''} userId={authInfo.user_id} />
-      <NewTicketNotifier token={localStorage.getItem(TOKEN_KEY) || ''} />
+      <NewTicketNotifier token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={isAdminRole} />
       <NewClientMessageNotifier token={localStorage.getItem(TOKEN_KEY) || ''} />
     </div>
   );
