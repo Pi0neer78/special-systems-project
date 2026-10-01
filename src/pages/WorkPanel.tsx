@@ -1407,7 +1407,7 @@ const PRIORITY_COLOR: Record<string, string> = { low: 'gray', medium: 'blue', hi
 const TICKETS_VIEW_KEY = 'wp_tickets_view';
 const TICKETS_ARCHIVE_DAYS_KEY = 'wp_tickets_archive_days';
 
-function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
+function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { token: string; isAdmin: boolean; openTicketId?: number | null; onTicketOpened?: () => void }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [meta, setMeta] = useState<TicketMeta | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1579,6 +1579,12 @@ function TicketsSection({ token, isAdmin }: { token: string; isAdmin: boolean })
   }, [filterStatuses, filterClient, filterType, filterAssignee]);
 
   useEffect(() => { if (showArchive) loadArchived(); }, [showArchive]);
+
+  useEffect(() => {
+    if (!openTicketId || loading) return;
+    const found = tickets.find(x => x.id === openTicketId);
+    if (found) { setDetailModal(found); onTicketOpened?.(); }
+  }, [openTicketId, tickets, loading]);
 
   const openEdit = (t: Ticket) => {
     setEditForm({
@@ -3745,7 +3751,7 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
 
 const TICKET_POLL_MS = 60 * 1000;
 
-function NewTicketNotifier({ token, isAdmin }: { token: string; isAdmin: boolean }) {
+function NewTicketNotifier({ token, isAdmin, onOpenTicket }: { token: string; isAdmin: boolean; onOpenTicket: (id: number) => void }) {
   const seenRef = useRef<Set<number> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -3792,7 +3798,7 @@ function NewTicketNotifier({ token, isAdmin }: { token: string; isAdmin: boolean
         const body = `${t.client_name} — ${t.problem_type}`;
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
           const n = new Notification(title, { body, icon: '/favicon.svg', tag: `ticket-${t.id}` });
-          n.onclick = () => { window.focus(); n.close(); };
+          n.onclick = () => { window.focus(); n.close(); onOpenTicket(t.id); };
         }
       });
 
@@ -3800,6 +3806,8 @@ function NewTicketNotifier({ token, isAdmin }: { token: string; isAdmin: boolean
         ? (fresh.length === 1 ? 'Новая заявка от клиента' : `Новых заявок: ${fresh.length}`)
         : (fresh.length === 1 ? 'Вам назначена заявка' : `Вам назначено заявок: ${fresh.length}`), {
         description: fresh.length === 1 ? `${fresh[0].client_name} — ${fresh[0].problem_type}` : undefined,
+        action: { label: 'Открыть', onClick: () => onOpenTicket(fresh[0].id) },
+        duration: 15000,
       });
     };
 
@@ -3889,6 +3897,8 @@ const ADMIN_TABS: { id: Tab; label: string; icon: string }[] = [
 export default function WorkPanel() {
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
   const [tab, setTab] = useState<Tab>('credentials');
+  const [openTicketId, setOpenTicketId] = useState<number | null>(null);
+  const handleOpenTicket = (id: number) => { setTab('tickets'); setOpenTicketId(id); window.dispatchEvent(new Event('tickets-refresh')); };
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [configDbs, setConfigDbs] = useState<import('@/pages/Admin').ConfigDB[]>([]);
   const [allClients, setAllClients] = useState<{ id: number; name: string }[]>([]);
@@ -4005,7 +4015,7 @@ export default function WorkPanel() {
         )}
         {tab === 'tickets' && (
           <div className="container py-6">
-            <TicketsSection token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={authInfo.role === 'admin'} />
+            <TicketsSection token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={authInfo.role === 'admin'} openTicketId={openTicketId} onTicketOpened={() => setOpenTicketId(null)} />
           </div>
         )}
         {tab === 'tasks' && (
@@ -4031,7 +4041,7 @@ export default function WorkPanel() {
       </main>
 
       <TaskReminder token={localStorage.getItem(TOKEN_KEY) || ''} userId={authInfo.user_id} />
-      <NewTicketNotifier token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={isAdminRole} />
+      <NewTicketNotifier token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={isAdminRole} onOpenTicket={handleOpenTicket} />
       <NewClientMessageNotifier token={localStorage.getItem(TOKEN_KEY) || ''} />
     </div>
   );
