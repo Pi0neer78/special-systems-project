@@ -2160,7 +2160,7 @@ function TicketsSection({ token, isAdmin, openTicketId, onTicketOpened }: { toke
                     </div>
                   </TabsContent>
                   <TabsContent value="chat" className="mt-3 h-[min(480px,56vh)] overflow-y-auto">
-                    <TicketChat ticketId={t.id} authHeader={chatAuthHeader} mySenderType="staff" onLoaded={() => load(true)} />
+                    <TicketChat ticketId={t.id} authHeader={chatAuthHeader} mySenderType="staff" onLoaded={() => { load(true); window.dispatchEvent(new Event('tickets-read')); }} />
                   </TabsContent>
                   <TabsContent value="history" className="mt-3 h-[min(480px,56vh)] overflow-y-auto">
                     <TicketHistory key={`${t.id}-${t.status_changed_at}-${t.assignee_id}-${t.result}`} ticketUrl={`${TICKETS_URL}?resource=ticket-history&id=${t.id}`} token={token} />
@@ -3991,6 +3991,30 @@ export default function WorkPanel() {
     const v = Number(new URLSearchParams(window.location.search).get('ticket'));
     return v > 0 ? v : null;
   });
+  const [unreadTickets, setUnreadTickets] = useState(0);
+  const authed = !!authInfo;
+  useEffect(() => {
+    if (!authed) return;
+    let cancelled = false;
+    const loadUnread = async () => {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (!token) return;
+      const data = await fetch(`${TICKETS_URL}?resource=tickets`, { headers: { 'X-Admin-Token': token } })
+        .then(r => r.json()).catch(() => null);
+      if (cancelled || !Array.isArray(data)) return;
+      setUnreadTickets(data.filter((t: Ticket) => (t.unread_count || 0) > 0).length);
+    };
+    loadUnread();
+    const interval = setInterval(loadUnread, 20000);
+    window.addEventListener('tickets-refresh', loadUnread);
+    window.addEventListener('tickets-read', loadUnread);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      window.removeEventListener('tickets-refresh', loadUnread);
+      window.removeEventListener('tickets-read', loadUnread);
+    };
+  }, [authed]);
   const handleOpenTicket = (id: number) => { setTab('tickets'); setOpenTicketId(id); window.dispatchEvent(new Event('tickets-refresh')); };
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [configDbs, setConfigDbs] = useState<import('@/pages/Admin').ConfigDB[]>([]);
@@ -4107,6 +4131,12 @@ export default function WorkPanel() {
                 }`}>
                 <Icon name={t.icon} size={14} />
                 <span className="hidden sm:inline">{t.label}</span>
+                {t.id === 'tickets' && unreadTickets > 0 && (
+                  <span title={`Заявок с непрочитанными сообщениями: ${unreadTickets}`}
+                    className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-none">
+                    {unreadTickets}
+                  </span>
+                )}
               </button>
             ))}
             {isAdminRole && (
