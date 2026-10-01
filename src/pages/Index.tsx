@@ -43,11 +43,21 @@ function LoginDialog({ open, onClose }: { open: boolean; onClose: () => void }) 
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
+      <DialogContent className="max-w-sm overflow-hidden">
+        <img
+          src="/accountant.jpg"
+          alt=""
+          aria-hidden="true"
+          className="absolute -right-10 -top-6 h-64 w-auto max-w-none pointer-events-none select-none opacity-30 dark:opacity-25"
+          style={{
+            WebkitMaskImage: 'radial-gradient(ellipse 50% 55% at 60% 40%, #000 25%, transparent 75%)',
+            maskImage: 'radial-gradient(ellipse 50% 55% at 60% 40%, #000 25%, transparent 75%)',
+          }}
+        />
+        <DialogHeader className="relative">
           <DialogTitle className="font-display uppercase tracking-wide">Вход в личный кабинет</DialogTitle>
         </DialogHeader>
-        <form onSubmit={submit} className="space-y-4 pt-1">
+        <form onSubmit={submit} className="relative space-y-4 pt-1">
           <div>
             <label className="text-xs text-muted-foreground mb-1 block">Логин</label>
             <Input value={login} onChange={e => setLogin(e.target.value)} className="bg-secondary/40 border-border" autoComplete="username" required />
