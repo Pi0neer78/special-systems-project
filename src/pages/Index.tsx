@@ -94,6 +94,17 @@ export default function Index() {
       {/* Hero */}
       <section className="relative flex-1 flex items-center justify-center py-32 overflow-hidden grid-bg">
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[500px] bg-primary/15 rounded-full blur-[150px] animate-glow pointer-events-none" />
+        <img
+          src="/accountant.jpg"
+          alt=""
+          aria-hidden="true"
+          className="absolute right-0 bottom-0 h-full w-auto max-w-none pointer-events-none select-none opacity-35 md:opacity-65 dark:opacity-30 dark:md:opacity-50 animate-fade-in"
+          style={{
+            WebkitMaskImage: 'radial-gradient(ellipse 55% 58% at 55% 45%, #000 30%, transparent 75%)',
+            maskImage: 'radial-gradient(ellipse 55% 58% at 55% 45%, #000 30%, transparent 75%)',
+          }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-r from-background via-background/75 via-45% to-transparent pointer-events-none" />
         <div className="container relative text-center max-w-3xl mx-auto">
           <span className="inline-flex items-center gap-2 px-3 py-1.5 mb-8 rounded-full border border-primary/40 bg-primary/10 text-primary text-xs font-mono uppercase tracking-widest animate-fade-in">
             <Icon name="Shield" size={13} />
