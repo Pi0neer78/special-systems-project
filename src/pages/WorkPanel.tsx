@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import ThemeToggle from '@/components/ThemeToggle';
 import TicketChat from '@/components/TicketChat';
 import TicketHistory from '@/components/TicketHistory';
+import PasswordGenerator from '@/components/PasswordGenerator';
 import workPanelBg from '@/assets/work-panel-bg.jpg';
 import { tryReadStoredKey, pickAndReadKey, pickKeyViaInput, clearKeyFileHandle, isFileSystemAccessSupported } from '@/lib/keyFileStore';
 import {
@@ -3992,6 +3993,7 @@ export default function WorkPanel() {
     return v > 0 ? v : null;
   });
   const [unreadTickets, setUnreadTickets] = useState(0);
+  const [pwdGenOpen, setPwdGenOpen] = useState(false);
   const authed = !!authInfo;
   useEffect(() => {
     if (!authed) return;
@@ -4113,9 +4115,11 @@ export default function WorkPanel() {
       <header className="border-b border-border/60 bg-background/90 backdrop-blur-xl sticky top-0 z-40 relative">
         <div className="container flex items-center justify-between h-14">
           <div className="flex items-center gap-3">
-            <span className="flex items-center justify-center w-8 h-8 rounded-md bg-primary/15 border border-primary/40">
+            <button type="button" onClick={() => setPwdGenOpen(true)} title="Генератор паролей"
+              className="flex items-center justify-center w-8 h-8 rounded-md bg-primary/15 border border-primary/40 hover:bg-primary/25 transition-colors">
               <Icon name="Briefcase" className="text-primary" size={16} />
-            </span>
+            </button>
+            <PasswordGenerator open={pwdGenOpen} onOpenChange={setPwdGenOpen} />
             <span className="font-display text-base uppercase tracking-wide">
               Спец<span className="text-primary">Системы</span>
             </span>
