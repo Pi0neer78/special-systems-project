@@ -38,7 +38,6 @@ export default function PasswordGenerator({ open, onOpenChange }: { open: boolea
   const [digits, setDigits] = useState(true);
   const [length, setLength] = useState(16);
   const [passwords, setPasswords] = useState<string[]>([]);
-  const [copied, setCopied] = useState<number | null>(null);
 
   const build = () => {
     const pools: string[] = [];
@@ -50,14 +49,41 @@ export default function PasswordGenerator({ open, onOpenChange }: { open: boolea
       toast.error('Выберите хотя бы один тип символов');
       return;
     }
-    setCopied(null);
     setPasswords(Array.from({ length: 5 }, () => generate(length, pools)));
   };
 
-  const copy = async (pwd: string, i: number) => {
-    await navigator.clipboard.writeText(pwd).catch(() => {});
-    setCopied(i);
-    toast.success('Пароль скопирован');
+  const fallbackCopy = (text: string, host: HTMLElement) => {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '0';
+    ta.style.left = '0';
+    ta.style.opacity = '0';
+    host.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch { ok = false; }
+    host.removeChild(ta);
+    return ok;
+  };
+
+  const copy = async (pwd: string, host: HTMLElement) => {
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(pwd);
+      ok = true;
+    } catch {
+      ok = fallbackCopy(pwd, host);
+    }
+    if (ok) {
+      toast.success('Пароль скопирован');
+      onOpenChange(false);
+    } else {
+      toast.error('Не удалось скопировать. Выделите пароль и нажмите Ctrl+C');
+    }
   };
 
   const opts = [
@@ -100,9 +126,9 @@ export default function PasswordGenerator({ open, onOpenChange }: { open: boolea
               {passwords.map((p, i) => (
                 <div key={`${p}-${i}`} className="flex items-center gap-2 rounded-md border border-border bg-secondary/30 px-3 py-1.5">
                   <span className="flex-1 font-mono text-sm break-all select-all">{p}</span>
-                  <button onClick={() => copy(p, i)} title="Копировать"
+                  <button onClick={e => copy(p, e.currentTarget.parentElement as HTMLElement)} title="Копировать"
                     className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors shrink-0">
-                    <Icon name={copied === i ? 'Check' : 'Copy'} size={14} />
+                    <Icon name="Copy" size={14} />
                   </button>
                 </div>
               ))}
