@@ -9,6 +9,7 @@ import Index from "./pages/Index";
 import Admin from "./pages/Admin";
 import WorkPanel from "./pages/WorkPanel";
 import PersonalAccount from "./pages/PersonalAccount";
+import Etiketka from "./pages/Etiketka";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -23,6 +24,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Index />} />
             <Route path="/admin" element={<Admin />} />
+            <Route path="/etiketka" element={<Etiketka />} />
             <Route path="/work-panel" element={<WorkPanel />} />
             <Route path="/personal-account" element={<PersonalAccount />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
