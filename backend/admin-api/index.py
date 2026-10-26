@@ -6,6 +6,8 @@ import secrets
 import string
 import time
 import re
+import calendar
+from datetime import date, datetime, timedelta
 import urllib.request
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -86,6 +88,80 @@ def fetch_rs_releases() -> dict:
         if latest:
             result[cfg['code']] = {'version': latest['v'], 'date': latest.get('date')}
     return result
+
+
+PW_SELECT = f"""
+    SELECT pw.id, pw.start_date, pw.end_date, pw.client_id, c.name AS client_name,
+           pw.description, pw.period_type, pw.weekdays, pw.month_days, pw.run_time, pw.is_active,
+           COALESCE((SELECT array_agg(a.user_id ORDER BY a.user_id) FROM {SCHEMA}.planned_work_assignees a WHERE a.planned_work_id = pw.id), '{{}}') AS assignee_ids
+    FROM {SCHEMA}.planned_works pw
+    LEFT JOIN {SCHEMA}.clients c ON c.id = pw.client_id
+"""
+PW_MAX_DAYS = 400
+
+
+def pw_dates(pw):
+    start = pw['start_date'] if isinstance(pw['start_date'], date) else datetime.strptime(str(pw['start_date']), '%Y-%m-%d').date()
+    end = pw['end_date'] if isinstance(pw['end_date'], date) else datetime.strptime(str(pw['end_date']), '%Y-%m-%d').date()
+    result = []
+    d = start
+    n = 0
+    while d <= end and n < PW_MAX_DAYS:
+        n += 1
+        t = pw['period_type']
+        if t == 'daily':
+            hit = True
+        elif t == 'weekdays':
+            hit = d.weekday() in (pw['weekdays'] or [])
+        else:
+            last = calendar.monthrange(d.year, d.month)[1]
+            hit = any(min(int(x), last) == d.day for x in (pw['month_days'] or []))
+        if hit:
+            result.append(d)
+        d += timedelta(days=1)
+    return result
+
+
+def sync_planned_work(cur, pid):
+    """Приводит задачи плановой работы в соответствие с записью справочника."""
+    cur.execute(PW_SELECT + " WHERE pw.id=%s", (pid,))
+    pw = cur.fetchone()
+    cur.execute(f"SELECT id, due_date, assignee_id FROM {SCHEMA}.tasks WHERE planned_work_id=%s", (pid,))
+    existing = cur.fetchall()
+    if not pw or not pw['is_active']:
+        for t in existing:
+            cur.execute(f"DELETE FROM {SCHEMA}.task_watchers WHERE task_id=%s", (t['id'],))
+            cur.execute(f"DELETE FROM {SCHEMA}.tasks WHERE id=%s", (t['id'],))
+        return
+    title = 'Плановые работы' + (f": {pw['client_name']}" if pw['client_name'] else '')
+    all_day = pw['run_time'] is None
+    wanted = {(d, uid) for d in pw_dates(pw) for uid in (pw['assignee_ids'] or [])}
+    have = {}
+    for t in existing:
+        key = (t['due_date'], t['assignee_id'])
+        if key in wanted and key not in have:
+            have[key] = t['id']
+        else:
+            cur.execute(f"DELETE FROM {SCHEMA}.task_watchers WHERE task_id=%s", (t['id'],))
+            cur.execute(f"DELETE FROM {SCHEMA}.tasks WHERE id=%s", (t['id'],))
+    for key, tid in have.items():
+        cur.execute(f"""
+            UPDATE {SCHEMA}.tasks SET title=%s, description=%s, due_time=%s, all_day=%s, color='purple', updated_at=NOW()
+            WHERE id=%s
+        """, (title, pw['description'], pw['run_time'], all_day, tid))
+    for key in sorted(wanted - set(have.keys())):
+        cur.execute(f"""
+            INSERT INTO {SCHEMA}.tasks (title, description, status, color, due_date, due_time, all_day, repeat_rule, assignee_id, planned_work_id)
+            VALUES (%s,%s,'new','purple',%s,%s,%s,'none',%s,%s)
+        """, (title, pw['description'], key[0], pw['run_time'], all_day, key[1], pid))
+
+
+def pw_params(body):
+    ptype = body.get('period_type') if body.get('period_type') in ('weekdays', 'daily', 'month_days') else 'weekdays'
+    weekdays = sorted({int(x) for x in (body.get('weekdays') or []) if 0 <= int(x) <= 6})
+    month_days = sorted({int(x) for x in (body.get('month_days') or []) if 1 <= int(x) <= 31})
+    run_time = body.get('run_time') or None
+    return ptype, weekdays, month_days, run_time
 
 
 def handler(event: dict, context) -> dict:
@@ -395,6 +471,70 @@ def handler(event: dict, context) -> dict:
                     cur.execute(f"DELETE FROM {SCHEMA}.work_types WHERE id=%s RETURNING id", (rid_int,))
                     conn.commit()
                     return ok({'ok': True}) if cur.fetchone() else err('Not found', 404)
+
+        # ── PLANNED WORKS (справочник «Плановые работы») ───────────────────────
+        if resource == 'planned_works':
+            if not rid:
+                if method == 'GET':
+                    cur.execute(PW_SELECT + " ORDER BY pw.start_date DESC, pw.id DESC")
+                    return ok(cur.fetchall())
+                if method == 'POST':
+                    if not body.get('start_date') or not body.get('end_date'):
+                        return err('Укажите даты начала и конца')
+                    if body['end_date'] < body['start_date']:
+                        return err('Дата конца раньше даты начала')
+                    ptype, weekdays, month_days, run_time = pw_params(body)
+                    cur.execute(f"""
+                        INSERT INTO {SCHEMA}.planned_works (start_date, end_date, client_id, description, period_type, weekdays, month_days, run_time, is_active)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+                    """, (body['start_date'], body['end_date'], body.get('client_id') or None, body.get('description') or '', ptype, weekdays, month_days, run_time, bool(body.get('is_active', True))))
+                    new_id = cur.fetchone()['id']
+                    for uid in {int(x) for x in (body.get('assignee_ids') or [])}:
+                        cur.execute(f"INSERT INTO {SCHEMA}.planned_work_assignees (planned_work_id, user_id) VALUES (%s,%s)", (new_id, uid))
+                    sync_planned_work(cur, new_id)
+                    conn.commit()
+                    cur.execute(PW_SELECT + " WHERE pw.id=%s", (new_id,))
+                    return ok(dict(cur.fetchone()))
+            else:
+                rid_int = int(rid)
+                if method == 'PUT':
+                    if not body.get('start_date') or not body.get('end_date'):
+                        return err('Укажите даты начала и конца')
+                    if body['end_date'] < body['start_date']:
+                        return err('Дата конца раньше даты начала')
+                    ptype, weekdays, month_days, run_time = pw_params(body)
+                    cur.execute(f"""
+                        UPDATE {SCHEMA}.planned_works SET start_date=%s, end_date=%s, client_id=%s, description=%s,
+                          period_type=%s, weekdays=%s, month_days=%s, run_time=%s, is_active=%s, updated_at=NOW()
+                        WHERE id=%s RETURNING id
+                    """, (body['start_date'], body['end_date'], body.get('client_id') or None, body.get('description') or '', ptype, weekdays, month_days, run_time, bool(body.get('is_active', True)), rid_int))
+                    if not cur.fetchone():
+                        return err('Not found', 404)
+                    cur.execute(f"DELETE FROM {SCHEMA}.planned_work_assignees WHERE planned_work_id=%s", (rid_int,))
+                    for uid in {int(x) for x in (body.get('assignee_ids') or [])}:
+                        cur.execute(f"INSERT INTO {SCHEMA}.planned_work_assignees (planned_work_id, user_id) VALUES (%s,%s)", (rid_int, uid))
+                    sync_planned_work(cur, rid_int)
+                    conn.commit()
+                    cur.execute(PW_SELECT + " WHERE pw.id=%s", (rid_int,))
+                    return ok(dict(cur.fetchone()))
+                if method == 'PATCH':
+                    cur.execute(f"UPDATE {SCHEMA}.planned_works SET is_active = NOT is_active, updated_at=NOW() WHERE id=%s RETURNING id", (rid_int,))
+                    if not cur.fetchone():
+                        return err('Not found', 404)
+                    sync_planned_work(cur, rid_int)
+                    conn.commit()
+                    cur.execute(PW_SELECT + " WHERE pw.id=%s", (rid_int,))
+                    return ok(dict(cur.fetchone()))
+                if method == 'DELETE':
+                    cur.execute(f"SELECT id FROM {SCHEMA}.tasks WHERE planned_work_id=%s", (rid_int,))
+                    for t in cur.fetchall():
+                        cur.execute(f"DELETE FROM {SCHEMA}.task_watchers WHERE task_id=%s", (t['id'],))
+                    cur.execute(f"DELETE FROM {SCHEMA}.tasks WHERE planned_work_id=%s", (rid_int,))
+                    cur.execute(f"DELETE FROM {SCHEMA}.planned_work_assignees WHERE planned_work_id=%s", (rid_int,))
+                    cur.execute(f"DELETE FROM {SCHEMA}.planned_works WHERE id=%s RETURNING id", (rid_int,))
+                    found = cur.fetchone()
+                    conn.commit()
+                    return ok({'ok': True}) if found else err('Not found', 404)
 
         # ── ПРОВЕРКА АКТУАЛЬНОЙ ВЕРСИИ ЧЕРЕЗ RIAL-SOFT.RU ────────────────────────
         # GET ?resource=check-version&id=N        — проверить одну базу

@@ -19,7 +19,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
-import { UsersSection, ClientsSection, DatabasesSection, WorkTypesSection, api as adminApi } from '@/pages/Admin';
+import { UsersSection, ClientsSection, DatabasesSection, WorkTypesSection, PlannedWorksSection, api as adminApi } from '@/pages/Admin';
 
 
 const AUTH_URL = 'https://functions.poehali.dev/115d85ec-a990-4455-824d-27487ad441c1';
@@ -3988,18 +3988,19 @@ function NewClientMessageNotifier({ token }: { token: string }) {
 // MAIN
 // ══════════════════════════════════════════════════════════════════════════════
 
-type Tab = 'credentials' | 'updates' | 'tickets' | 'tasks' | 'admin-users' | 'admin-clients' | 'admin-databases' | 'admin-work-types';
+type Tab = 'credentials' | 'updates' | 'tickets' | 'tasks' | 'admin-users' | 'admin-clients' | 'admin-databases' | 'admin-work-types' | 'admin-planned-works';
 
 const ADMIN_TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'admin-users', label: 'Пользователи', icon: 'Users' },
   { id: 'admin-clients', label: 'Клиенты', icon: 'Building2' },
   { id: 'admin-databases', label: 'Базы данных', icon: 'Database' },
   { id: 'admin-work-types', label: 'Виды работ', icon: 'ClipboardList' },
+  { id: 'admin-planned-works', label: 'Плановые работы', icon: 'CalendarClock' },
 ];
 
 export default function WorkPanel() {
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
-  const VALID_TABS: Tab[] = ['credentials', 'updates', 'tickets', 'tasks', 'admin-users', 'admin-clients', 'admin-databases', 'admin-work-types'];
+  const VALID_TABS: Tab[] = ['credentials', 'updates', 'tickets', 'tasks', 'admin-users', 'admin-clients', 'admin-databases', 'admin-work-types', 'admin-planned-works'];
   const [tab, setTabState] = useState<Tab>(() => {
     const saved = localStorage.getItem('wp_active_tab') as Tab | null;
     if (new URLSearchParams(window.location.search).get('ticket')) return 'tickets';
@@ -4232,6 +4233,11 @@ export default function WorkPanel() {
         {activeTab === 'admin-work-types' && isAdminRole && (
           <div className="container py-6">
             <WorkTypesSection />
+          </div>
+        )}
+        {activeTab === 'admin-planned-works' && isAdminRole && (
+          <div className="container py-6">
+            <PlannedWorksSection />
           </div>
         )}
       </main>

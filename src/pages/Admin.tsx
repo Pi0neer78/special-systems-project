@@ -1598,3 +1598,260 @@ export function WorkTypesSection() {
     </div>
   );
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// PLANNED WORKS SECTION (справочник «Плановые работы»)
+// ══════════════════════════════════════════════════════════════════════════════
+
+type PlannedWork = {
+  id: number; start_date: string; end_date: string; client_id: number | null; client_name: string | null;
+  description: string; period_type: 'weekdays' | 'daily' | 'month_days'; weekdays: number[]; month_days: number[];
+  run_time: string | null; is_active: boolean; assignee_ids: number[];
+};
+
+const WEEKDAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+
+const EMPTY_PW_FORM = {
+  start_date: '', end_date: '', client_id: '', description: '',
+  period_type: 'weekdays' as PlannedWork['period_type'],
+  weekdays: [] as number[], month_days: [] as number[], run_time: '',
+  assignee_ids: [] as number[], is_active: true,
+};
+
+function toggleIn(list: number[], v: number) {
+  return list.includes(v) ? list.filter(x => x !== v) : [...list, v];
+}
+
+function periodText(w: PlannedWork) {
+  const time = w.run_time ? ` в ${w.run_time.slice(0, 5)}` : '';
+  if (w.period_type === 'daily') return `Каждый день${time}`;
+  if (w.period_type === 'weekdays') return `${w.weekdays.map(d => WEEKDAY_LABELS[d]).join(', ') || '—'}${time}`;
+  return `Числа: ${w.month_days.join(', ') || '—'}${time}`;
+}
+
+function fmtDate(d: string) {
+  const [y, m, day] = d.split('-');
+  return `${day}.${m}.${y}`;
+}
+
+export function PlannedWorksSection() {
+  const [items, setItems] = useState<PlannedWork[]>([]);
+  const [clients, setClients] = useState<{ id: number; name: string }[]>([]);
+  const [users, setUsers] = useState<{ id: number; login: string; full_name: string | null }[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState<{ open: boolean; item?: PlannedWork }>({ open: false });
+  const [form, setForm] = useState(EMPTY_PW_FORM);
+  const [saving, setSaving] = useState(false);
+  const [toDelete, setToDelete] = useState<PlannedWork | null>(null);
+
+  const userName = (id: number) => {
+    const u = users.find(x => x.id === id);
+    return u ? (u.full_name || u.login) : `#${id}`;
+  };
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api('resource=planned_works').then(d => {
+      setItems(Array.isArray(d) ? d : []);
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => {
+    load();
+    api('resource=clients').then(d => { if (Array.isArray(d)) setClients(d.map((c: { id: number; name: string }) => ({ id: c.id, name: c.name }))); });
+    api('resource=users').then(d => { if (Array.isArray(d)) setUsers(d.filter((u: { is_active: boolean }) => u.is_active)); });
+  }, [load]);
+
+  const openAdd = () => { setForm(EMPTY_PW_FORM); setModal({ open: true }); };
+
+  const openEdit = (w: PlannedWork) => {
+    setForm({
+      start_date: w.start_date, end_date: w.end_date, client_id: w.client_id ? String(w.client_id) : '',
+      description: w.description || '', period_type: w.period_type, weekdays: w.weekdays || [],
+      month_days: w.month_days || [], run_time: w.run_time ? w.run_time.slice(0, 5) : '',
+      assignee_ids: w.assignee_ids || [], is_active: w.is_active,
+    });
+    setModal({ open: true, item: w });
+  };
+
+  const save = async () => {
+    if (!form.start_date || !form.end_date) { toast.error('Укажите даты начала и конца'); return; }
+    if (form.end_date < form.start_date) { toast.error('Дата конца раньше даты начала'); return; }
+    if (form.assignee_ids.length === 0) { toast.error('Выберите ответственных'); return; }
+    if (form.period_type === 'weekdays' && form.weekdays.length === 0) { toast.error('Выберите дни недели'); return; }
+    if (form.period_type === 'month_days' && form.month_days.length === 0) { toast.error('Выберите числа месяца'); return; }
+    setSaving(true);
+    const payload = { ...form, client_id: form.client_id ? Number(form.client_id) : null, run_time: form.run_time || null };
+    const res = modal.item
+      ? await api(`resource=planned_works&id=${modal.item.id}`, 'PUT', payload)
+      : await api('resource=planned_works', 'POST', payload);
+    setSaving(false);
+    if (res?.error) { toast.error(res.error); return; }
+    setModal({ open: false });
+    load();
+  };
+
+  const toggle = async (w: PlannedWork) => {
+    setItems(list => list.map(x => x.id === w.id ? { ...x, is_active: !x.is_active } : x));
+    await api(`resource=planned_works&id=${w.id}`, 'PATCH');
+    load();
+  };
+
+  const remove = async () => {
+    if (!toDelete) return;
+    await api(`resource=planned_works&id=${toDelete.id}`, 'DELETE');
+    setToDelete(null);
+    load();
+  };
+
+  const chip = (active: boolean) =>
+    `px-2.5 py-1 rounded-md text-xs border transition-colors ${active ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground hover:text-foreground hover:bg-secondary'}`;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="font-display text-xl uppercase tracking-wide">Плановые работы</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">{items.length} записей. Активные работы автоматически попадают в задачи ответственных.</p>
+        </div>
+        <Button onClick={openAdd} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Icon name="Plus" size={15} className="mr-1.5" /> Добавить
+        </Button>
+      </div>
+
+      {loading ? <Spinner /> : (
+        <div className="rounded-xl border border-border overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary/60">
+              <tr>
+                {['Период', 'Клиент', 'Ответственные', 'Описание', 'Выполнение', 'Активна', ''].map(h => (
+                  <th key={h} className="text-left px-3 py-2 text-xs text-muted-foreground font-medium whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {items.length === 0 && (
+                <tr><td colSpan={7} className="text-center py-8 text-muted-foreground text-sm">Нет записей</td></tr>
+              )}
+              {items.map(w => (
+                <tr key={w.id} className={`border-t border-border hover:bg-secondary/30 transition-colors ${w.is_active ? '' : 'opacity-60'}`}>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(w.start_date)} — {fmtDate(w.end_date)}</td>
+                  <td className="px-3 py-2 font-medium">{w.client_name || '—'}</td>
+                  <td className="px-3 py-2 text-xs">{(w.assignee_ids || []).map(userName).join(', ') || '—'}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground max-w-xs truncate" title={w.description}>{w.description || '—'}</td>
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">{periodText(w)}</td>
+                  <td className="px-3 py-2"><Switch checked={w.is_active} onChange={() => toggle(w)} /></td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button onClick={() => openEdit(w)} className="text-muted-foreground hover:text-primary transition-colors p-1" title="Изменить">
+                        <Icon name="Pencil" size={14} />
+                      </button>
+                      <button onClick={() => setToDelete(w)} className="text-muted-foreground hover:text-destructive transition-colors p-1" title="Удалить">
+                        <Icon name="Trash2" size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Dialog open={modal.open} onOpenChange={o => setModal({ open: o })}>
+        <DialogContent className="bg-card border-border max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase">{modal.item ? 'Редактировать плановую работу' : 'Новая плановая работа'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Дата начала</label>
+                <Input type="date" value={form.start_date} onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))} className="bg-secondary/40 border-border" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Дата конца</label>
+                <Input type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} className="bg-secondary/40 border-border" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Клиент</label>
+              <Select value={form.client_id || 'none'} onValueChange={v => setForm(f => ({ ...f, client_id: v === 'none' ? '' : v }))}>
+                <SelectTrigger className="bg-secondary/40 border-border"><SelectValue placeholder="Не выбран" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Не выбран</SelectItem>
+                  {clients.map(c => <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Ответственные</label>
+              <div className="flex flex-wrap gap-1.5">
+                {users.map(u => (
+                  <button key={u.id} type="button" onClick={() => setForm(f => ({ ...f, assignee_ids: toggleIn(f.assignee_ids, u.id) }))} className={chip(form.assignee_ids.includes(u.id))}>
+                    {u.full_name || u.login}
+                  </button>
+                ))}
+                {users.length === 0 && <span className="text-xs text-muted-foreground">Нет активных пользователей</span>}
+              </div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Описание работ</label>
+              <Textarea value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} rows={3} className="bg-secondary/40 border-border" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs text-muted-foreground block">Период выполнения</label>
+              <div className="flex gap-1.5">
+                <button type="button" className={chip(form.period_type === 'weekdays')} onClick={() => setForm(f => ({ ...f, period_type: 'weekdays' }))}>Дни недели</button>
+                <button type="button" className={chip(form.period_type === 'daily')} onClick={() => setForm(f => ({ ...f, period_type: 'daily' }))}>Раз в день</button>
+                <button type="button" className={chip(form.period_type === 'month_days')} onClick={() => setForm(f => ({ ...f, period_type: 'month_days' }))}>Числа месяца</button>
+              </div>
+              {form.period_type === 'weekdays' && (
+                <div className="flex gap-1.5">
+                  {WEEKDAY_LABELS.map((l, i) => (
+                    <button key={l} type="button" className={chip(form.weekdays.includes(i))} onClick={() => setForm(f => ({ ...f, weekdays: toggleIn(f.weekdays, i) }))}>{l}</button>
+                  ))}
+                </div>
+              )}
+              {form.period_type === 'month_days' && (
+                <div className="grid grid-cols-8 gap-1">
+                  {Array.from({ length: 31 }, (_, i) => i + 1).map(n => (
+                    <button key={n} type="button" className={chip(form.month_days.includes(n))} onClick={() => setForm(f => ({ ...f, month_days: toggleIn(f.month_days, n) }))}>{n}</button>
+                  ))}
+                </div>
+              )}
+              <div>
+                <label className="text-xs text-muted-foreground mb-1 block">Время выполнения (необязательно)</label>
+                <Input type="time" value={form.run_time} onChange={e => setForm(f => ({ ...f, run_time: e.target.value }))} className="bg-secondary/40 border-border w-40" />
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch checked={form.is_active} onChange={v => setForm(f => ({ ...f, is_active: v }))} />
+              <span className="text-sm text-muted-foreground">{form.is_active ? 'Активна' : 'Отключена'}</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModal({ open: false })} className="border-border">Отмена</Button>
+            <Button onClick={save} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
+              {saving ? 'Сохранение...' : 'Сохранить'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!toDelete} onOpenChange={o => { if (!o) setToDelete(null); }}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase">Удалить плановую работу?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">Запись и все связанные с ней задачи у сотрудников будут удалены.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setToDelete(null)} className="border-border">Отмена</Button>
+            <Button onClick={remove} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Удалить</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
