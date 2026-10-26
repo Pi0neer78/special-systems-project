@@ -182,6 +182,11 @@ def handler(event: dict, context) -> dict:
                             SELECT task_id FROM {SCHEMA}.task_watchers WHERE user_id = %s
                         ))""")
                         params.extend([caller['user_id'], caller['user_id'], caller['user_id']])
+                    planned_f = qs.get('planned', '')
+                    if planned_f == '1':
+                        where.append('t.planned_work_id IS NOT NULL')
+                    elif planned_f == '0':
+                        where.append('t.planned_work_id IS NULL')
                     status_f = qs.get('status', '')
                     if status_f:
                         vals = status_f.split(',')

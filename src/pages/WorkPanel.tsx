@@ -2480,6 +2480,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [loading, setLoading] = useState(true);
   const [filterStatuses, setFilterStatuses] = useState<Set<string>>(new Set());
   const [filterAssignee, setFilterAssignee] = useState('');
+  const [filterPlanned, setFilterPlanned] = useState(false);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('due_date');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
@@ -2534,6 +2535,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
     const params = new URLSearchParams({ resource: 'tasks', sort, order });
     if (filterStatuses.size > 0) params.set('status', [...filterStatuses].join(','));
     if (filterAssignee) params.set('assignee_id', filterAssignee);
+    params.set('planned', filterPlanned ? '1' : '0');
     if (search) params.set('search', search);
     const data = await fetch(`${TASKS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json());
     setLoading(false);
@@ -2693,7 +2695,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   };
 
   useEffect(() => { loadMeta(); loadArchivedCount(); loadGcalStatus(); }, []);
-  useEffect(() => { load(); }, [filterStatuses, filterAssignee, search, sort, order]);
+  useEffect(() => { load(); }, [filterStatuses, filterAssignee, filterPlanned, search, sort, order]);
 
   useEffect(() => { if (showArchive) loadArchived(); }, [showArchive]);
 
@@ -2844,6 +2846,10 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
             </div>
           </PopoverContent>
         </Popover>
+        <button type="button" onClick={() => setFilterPlanned(v => !v)}
+          className={`h-8 px-3 rounded-md border text-xs font-medium flex items-center gap-1.5 transition-colors ${filterPlanned ? 'bg-primary text-primary-foreground border-primary' : 'border-border bg-secondary/40 text-muted-foreground hover:text-foreground'}`}>
+          <Icon name="CalendarClock" size={14} /> Плановые задачи
+        </button>
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по названию..."
           className="h-8 w-48 text-xs bg-secondary/40 border-border" />
         <div className="flex items-center gap-0.5 bg-secondary/30 border border-border rounded-md p-0.5 h-8">
