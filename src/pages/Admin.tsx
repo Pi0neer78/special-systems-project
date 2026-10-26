@@ -1514,10 +1514,164 @@ function AdminLogin({ onLogin }: { onLogin: (info: AuthInfo) => void }) {
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
+// WORK TYPES SECTION (справочник «Виды регламентных работ»)
+// ══════════════════════════════════════════════════════════════════════════════
+
+type WorkType = { id: number; name: string; duration_minutes: number; is_active: boolean };
+
+function WorkTypesSection() {
+  const [items, setItems] = useState<WorkType[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState<{ open: boolean; item?: WorkType }>({ open: false });
+  const [form, setForm] = useState({ name: '', duration_minutes: '30', is_active: true });
+  const [saving, setSaving] = useState(false);
+  const [toDelete, setToDelete] = useState<WorkType | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    api('resource=work_types').then(d => {
+      setItems(Array.isArray(d) ? d : []);
+      setLoading(false);
+    });
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const openAdd = () => {
+    setForm({ name: '', duration_minutes: '30', is_active: true });
+    setModal({ open: true });
+  };
+
+  const openEdit = (w: WorkType) => {
+    setForm({ name: w.name, duration_minutes: String(w.duration_minutes), is_active: w.is_active });
+    setModal({ open: true, item: w });
+  };
+
+  const save = async () => {
+    if (!form.name.trim()) { toast.error('Укажите название работ'); return; }
+    const minutes = parseInt(form.duration_minutes, 10);
+    if (isNaN(minutes) || minutes < 0) { toast.error('Длительность должна быть числом минут'); return; }
+    setSaving(true);
+    const payload = { name: form.name.trim(), duration_minutes: minutes, is_active: form.is_active };
+    const res = modal.item
+      ? await api(`resource=work_types&id=${modal.item.id}`, 'PUT', payload)
+      : await api('resource=work_types', 'POST', payload);
+    setSaving(false);
+    if (res?.error) { toast.error(res.error); return; }
+    setModal({ open: false });
+    load();
+  };
+
+  const toggle = async (w: WorkType) => {
+    setItems(list => list.map(x => x.id === w.id ? { ...x, is_active: !x.is_active } : x));
+    await api(`resource=work_types&id=${w.id}`, 'PATCH');
+    load();
+  };
+
+  const remove = async () => {
+    if (!toDelete) return;
+    await api(`resource=work_types&id=${toDelete.id}`, 'DELETE');
+    setToDelete(null);
+    load();
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h2 className="font-display text-xl uppercase tracking-wide">Виды регламентных работ</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">{items.length} записей</p>
+        </div>
+        <Button onClick={openAdd} className="bg-primary text-primary-foreground hover:bg-primary/90">
+          <Icon name="Plus" size={15} className="mr-1.5" /> Добавить
+        </Button>
+      </div>
+
+      {loading ? <Spinner /> : (
+        <div className="rounded-xl border border-border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-secondary/60">
+              <tr>
+                {['Название работ', 'Длительность, мин', 'Активна', ''].map(h => (
+                  <th key={h} className="text-left px-3 py-2 text-xs text-muted-foreground font-medium">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {items.length === 0 && (
+                <tr><td colSpan={4} className="text-center py-8 text-muted-foreground text-sm">Нет записей</td></tr>
+              )}
+              {items.map(w => (
+                <tr key={w.id} className={`border-t border-border hover:bg-secondary/30 transition-colors ${w.is_active ? '' : 'opacity-60'}`}>
+                  <td className="px-3 py-2 font-medium">{w.name}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{w.duration_minutes}</td>
+                  <td className="px-3 py-2"><Switch checked={w.is_active} onChange={() => toggle(w)} /></td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="flex items-center justify-end gap-1">
+                      <button onClick={() => openEdit(w)} className="text-muted-foreground hover:text-primary transition-colors p-1" title="Изменить">
+                        <Icon name="Pencil" size={14} />
+                      </button>
+                      <button onClick={() => setToDelete(w)} className="text-muted-foreground hover:text-destructive transition-colors p-1" title="Удалить">
+                        <Icon name="Trash2" size={14} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Dialog open={modal.open} onOpenChange={o => setModal({ open: o })}>
+        <DialogContent className="bg-card border-border max-w-md">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase">{modal.item ? 'Редактировать работу' : 'Новая работа'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Название работ</label>
+              <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} className="bg-secondary/40 border-border" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Длительность, минут</label>
+              <Input type="number" min={0} value={form.duration_minutes} onChange={e => setForm(f => ({ ...f, duration_minutes: e.target.value }))} className="bg-secondary/40 border-border" />
+            </div>
+            <div className="flex items-center gap-2">
+              <Switch checked={form.is_active} onChange={v => setForm(f => ({ ...f, is_active: v }))} />
+              <span className="text-sm text-muted-foreground">{form.is_active ? 'Активна' : 'Отключена'}</span>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModal({ open: false })} className="border-border">Отмена</Button>
+            <Button onClick={save} disabled={saving} className="bg-primary text-primary-foreground hover:bg-primary/90">
+              {saving ? 'Сохранение...' : 'Сохранить'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!toDelete} onOpenChange={o => { if (!o) setToDelete(null); }}>
+        <DialogContent className="bg-card border-border max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="font-display uppercase">Удалить работу?</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">«{toDelete?.name}» будет удалена без возможности восстановления.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setToDelete(null)} className="border-border">Отмена</Button>
+            <Button onClick={remove} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">Удалить</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
 // MAIN ADMIN PAGE
 // ══════════════════════════════════════════════════════════════════════════════
 
-type Tab = 'users' | 'clients' | 'databases';
+type Tab = 'users' | 'clients' | 'databases' | 'work_types';
 
 export default function Admin() {
   const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
@@ -1571,6 +1725,7 @@ export default function Admin() {
     { id: 'users', label: 'Пользователи', icon: 'Users', adminOnly: true },
     { id: 'clients', label: 'Клиенты', icon: 'Building2', adminOnly: false },
     { id: 'databases', label: 'Базы данных', icon: 'Database', adminOnly: false },
+    { id: 'work_types', label: 'Виды работ', icon: 'ClipboardList', adminOnly: true },
   ];
   const tabs = allTabs.filter(t => !t.adminOnly || isAdmin);
 
@@ -1614,6 +1769,7 @@ export default function Admin() {
         {tab === 'users' && isAdmin && <UsersSection allClients={allClients} />}
         {tab === 'clients' && <ClientsSection configDbs={configDbs} onClientsChanged={d => setAllClients(d.map(c => ({ id: c.id, name: c.name })))} />}
         {tab === 'databases' && <DatabasesSection onLoaded={setConfigDbs} />}
+        {tab === 'work_types' && isAdmin && <WorkTypesSection />}
       </main>
     </div>
   );

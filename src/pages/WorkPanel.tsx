@@ -31,6 +31,23 @@ const TOKEN_KEY = 'admin_token';
 
 function getToken() { return localStorage.getItem(TOKEN_KEY) || ''; }
 
+async function downloadFile(e: React.MouseEvent, url: string, name: string) {
+  e.preventDefault();
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  } catch {
+    window.open(url, '_blank');
+  }
+}
+
 async function api(qs: string, method = 'GET', body?: object) {
   const res = await fetch(`${API_URL}?${qs}`, {
     method,
@@ -251,7 +268,7 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
           {files.map(f => (
             <div key={f.id} className="flex items-center gap-2 group bg-secondary/30 rounded-md px-2.5 py-1.5">
               <Icon name={fileIconName(f.file_name)} size={14} className="text-muted-foreground shrink-0" />
-              <a href={f.file_url} target="_blank" rel="noreferrer" className="text-sm truncate hover:text-primary transition-colors flex-1 min-w-0">
+              <a href={f.file_url} onClick={e => downloadFile(e, f.file_url, f.file_name)} className="text-sm truncate hover:text-primary transition-colors flex-1 min-w-0 cursor-pointer">
                 {f.file_name}
               </a>
               {f.file_size != null && <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(f.file_size)}</span>}

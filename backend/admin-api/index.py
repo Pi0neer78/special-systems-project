@@ -354,6 +354,48 @@ def handler(event: dict, context) -> dict:
                     conn.commit()
                     return ok(dict(cur.fetchone()))
 
+        # ── WORK TYPES (справочник «Виды регламентных работ») ──────────────────
+        if resource == 'work_types':
+            if not rid:
+                if method == 'GET':
+                    cur.execute(f"SELECT id, name, duration_minutes, is_active FROM {SCHEMA}.work_types ORDER BY name")
+                    return ok(cur.fetchall())
+                if method == 'POST':
+                    name = (body.get('name') or '').strip()
+                    if not name:
+                        return err('Название обязательно')
+                    cur.execute(f"""
+                        INSERT INTO {SCHEMA}.work_types (name, duration_minutes, is_active)
+                        VALUES (%s,%s,%s) RETURNING id, name, duration_minutes, is_active
+                    """, (name, int(body.get('duration_minutes') or 0), bool(body.get('is_active', True))))
+                    conn.commit()
+                    return ok(dict(cur.fetchone()))
+            else:
+                rid_int = int(rid)
+                if method == 'PUT':
+                    name = (body.get('name') or '').strip()
+                    if not name:
+                        return err('Название обязательно')
+                    cur.execute(f"""
+                        UPDATE {SCHEMA}.work_types SET name=%s, duration_minutes=%s, is_active=%s, updated_at=NOW()
+                        WHERE id=%s RETURNING id, name, duration_minutes, is_active
+                    """, (name, int(body.get('duration_minutes') or 0), bool(body.get('is_active', True)), rid_int))
+                    conn.commit()
+                    row = cur.fetchone()
+                    return ok(dict(row)) if row else err('Not found', 404)
+                if method == 'PATCH':
+                    cur.execute(f"""
+                        UPDATE {SCHEMA}.work_types SET is_active = NOT is_active, updated_at=NOW()
+                        WHERE id=%s RETURNING id, name, duration_minutes, is_active
+                    """, (rid_int,))
+                    conn.commit()
+                    row = cur.fetchone()
+                    return ok(dict(row)) if row else err('Not found', 404)
+                if method == 'DELETE':
+                    cur.execute(f"DELETE FROM {SCHEMA}.work_types WHERE id=%s RETURNING id", (rid_int,))
+                    conn.commit()
+                    return ok({'ok': True}) if cur.fetchone() else err('Not found', 404)
+
         # ── ПРОВЕРКА АКТУАЛЬНОЙ ВЕРСИИ ЧЕРЕЗ RIAL-SOFT.RU ────────────────────────
         # GET ?resource=check-version&id=N        — проверить одну базу
         #   Response: { id, config_name, current, latest, has_update, latest_date }
