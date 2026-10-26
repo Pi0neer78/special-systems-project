@@ -380,7 +380,19 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
   return (
     <div className="border border-border rounded-lg p-4 space-y-3">
       <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3 flex-1 min-w-0 mr-3">
         <div className="text-xs font-mono text-primary uppercase tracking-widest">Файлы</div>
+        <div className="relative flex-1 min-w-0">
+          <Icon name="Search" size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск по имени и описанию"
+            className="w-full h-7 text-xs rounded-md border border-border bg-background pl-7 pr-7" />
+          {query && (
+            <button onClick={() => setQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <Icon name="X" size={12} />
+            </button>
+          )}
+        </div>
+        </div>
         <div className="flex items-center gap-2">
         <select value={sort} onChange={e => setSort(e.target.value as FileSort)} title="Сортировка"
           className="h-7 text-xs rounded-md border border-border bg-background text-foreground px-2">
@@ -400,16 +412,6 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
         <p className="text-xs text-muted-foreground py-1">Файлов пока нет</p>
       ) : (
         <>
-        <div className="relative">
-          <Icon name="Search" size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск по имени и описанию"
-            className="w-full h-7 text-xs rounded-md border border-border bg-background pl-7 pr-7" />
-          {query && (
-            <button onClick={() => setQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
-              <Icon name="X" size={12} />
-            </button>
-          )}
-        </div>
         {sorted.length === 0 && <p className="text-xs text-muted-foreground py-1">Ничего не найдено</p>}
         <div className="overflow-x-auto">
           <table ref={tableRef} className="w-full text-sm table-fixed">
@@ -422,13 +424,13 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
               <col style={{ width: 80 }} />
             </colgroup>
             <thead>
-              <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
-                <th className="py-0.5 px-2 w-8"></th>
-                <th className="py-1.5 px-2 font-medium relative select-none">Имя файла<span onMouseDown={e => startResize('name', e)} onDoubleClick={e => autoFit('name', e)} title="Потяните, чтобы изменить ширину; двойной щелчок — по содержимому" className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40" /></th>
-                <th className="py-1.5 px-2 font-medium relative select-none whitespace-nowrap">Дата<span onMouseDown={e => startResize('date', e)} onDoubleClick={e => autoFit('date', e)} title="Потяните, чтобы изменить ширину; двойной щелчок — по содержимому" className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40" /></th>
-                <th className="py-1.5 px-2 font-medium relative select-none whitespace-nowrap text-right">Размер<span onMouseDown={e => startResize('size', e)} onDoubleClick={e => autoFit('size', e)} title="Потяните, чтобы изменить ширину; двойной щелчок — по содержимому" className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40" /></th>
-                <th className="py-1.5 px-2 font-medium relative select-none">Описание<span onMouseDown={e => startResize('desc', e)} onDoubleClick={e => autoFit('desc', e)} title="Потяните, чтобы изменить ширину; двойной щелчок — по содержимому" className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40" /></th>
-                <th className="py-0.5 px-2 w-20"></th>
+              <tr className="text-left text-[11px] uppercase tracking-wider text-foreground bg-secondary border-y border-border">
+                <th className="py-1.5 px-2 border-x border-border/70"></th>
+                <th className="py-1.5 px-2 font-medium relative select-none border-x border-border/70">Имя файла<span onMouseDown={e => startResize('name', e)} onDoubleClick={e => autoFit('name', e)} title="Потяните, чтобы изменить ширину; двойной щелчок — по содержимому" className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40" /></th>
+                <th className="py-1.5 px-2 font-medium relative select-none border-x border-border/70 whitespace-nowrap">Дата<span onMouseDown={e => startResize('date', e)} onDoubleClick={e => autoFit('date', e)} title="Потяните, чтобы изменить ширину; двойной щелчок — по содержимому" className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40" /></th>
+                <th className="py-1.5 px-2 font-medium relative select-none border-x border-border/70 whitespace-nowrap text-right">Размер<span onMouseDown={e => startResize('size', e)} onDoubleClick={e => autoFit('size', e)} title="Потяните, чтобы изменить ширину; двойной щелчок — по содержимому" className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40" /></th>
+                <th className="py-1.5 px-2 font-medium relative select-none border-x border-border/70">Описание<span onMouseDown={e => startResize('desc', e)} onDoubleClick={e => autoFit('desc', e)} title="Потяните, чтобы изменить ширину; двойной щелчок — по содержимому" className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40" /></th>
+                <th className="py-1.5 px-2 border-x border-border/70"></th>
               </tr>
             </thead>
             <tbody>
