@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import ThemeToggle from '@/components/ThemeToggle';
 import TicketChat from '@/components/TicketChat';
+import GlobalSearch, { type SearchItem, type SearchNav } from '@/components/GlobalSearch';
 import TicketHistory from '@/components/TicketHistory';
 import PasswordGenerator from '@/components/PasswordGenerator';
 import workPanelBg from '@/assets/work-panel-bg.jpg';
@@ -654,17 +655,18 @@ function HighlightText({ text, query }: { text: string; query: string }) {
 }
 
 function FolderNode({
-  folder, folders, selectedId, onSelect, onMenu, depth, forceExpand, highlight,
+  folder, folders, selectedId, onSelect, onMenu, depth, forceExpand, highlight, revealPath,
   dragActive, dragOverFolderId, onDragOverFolder, onDropCred,
 }: {
   folder: Folder; folders: Folder[]; selectedId: number | null;
   onSelect: (id: number) => void; onMenu: (e: React.MouseEvent, folder: Folder) => void; depth: number;
-  forceExpand?: boolean; highlight?: string;
+  forceExpand?: boolean; highlight?: string; revealPath?: Set<number>;
   dragActive?: boolean; dragOverFolderId?: number | null;
   onDragOverFolder?: (id: number | null) => void; onDropCred?: (folderId: number) => void;
 }) {
   const isRoot = folder.parent_id === null;
   const [open, setOpen] = useState(isRoot);
+  useEffect(() => { if (revealPath?.has(folder.id)) setOpen(true); }, [revealPath]);
   const children = buildTree(folders, folder.id);
   const effectiveOpen = forceExpand || open;
   const isDropTarget = dragActive && dragOverFolderId === folder.id;
@@ -695,7 +697,7 @@ function FolderNode({
       </div>
       {effectiveOpen && children.map(ch => (
         <FolderNode key={ch.id} folder={ch} folders={folders} selectedId={selectedId}
-          onSelect={onSelect} onMenu={onMenu} depth={depth + 1} forceExpand={forceExpand} highlight={highlight}
+          onSelect={onSelect} onMenu={onMenu} depth={depth + 1} forceExpand={forceExpand} highlight={highlight} revealPath={revealPath}
           dragActive={dragActive} dragOverFolderId={dragOverFolderId} onDragOverFolder={onDragOverFolder} onDropCred={onDropCred} />
       ))}
     </div>
@@ -705,7 +707,9 @@ function FolderNode({
 const PANEL_WIDTH_KEY = 'wp_cred_panel_width';
 const DEFAULT_PANEL_W = 30;
 
-function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
+function CredentialsSection({ isAdmin, focus }: { isAdmin: boolean; focus?: (SearchNav & { key: number }) | null }) {
+  const pendingFocus = useRef<SearchNav | null>(null);
+  const [revealPath, setRevealPath] = useState<Set<number> | undefined>(undefined);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [selectedFolder, setSelectedFolder] = useState<number | null>(null);
   const [creds, setCreds] = useState<Credential[]>([]);
@@ -766,7 +770,11 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
   const loadCreds = (fid: number) => api(`resource=credentials&folder_id=${fid}`).then(d => {
     if (Array.isArray(d)) {
       setCreds(d);
-      if (d.length > 0) selectCredData(d[0]);
+      const pf = pendingFocus.current;
+      pendingFocus.current = null;
+      if (pf && pf.credential_id && d.find((x: Credential) => x.id === pf.credential_id)) selectCredData(d.find((x: Credential) => x.id === pf.credential_id));
+      else if (pf?.files) { setSelectedCred(null); setForm(EMPTY_CRED); setDirty(false); setViewingFiles(true); }
+      else if (d.length > 0) selectCredData(d[0]);
       else { setViewingFiles(false); setSelectedCred(null); setForm(EMPTY_CRED); setDirty(false); }
     }
   });
@@ -781,6 +789,21 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
   });
 
   useEffect(() => { loadFolders(); }, []);
+  useEffect(() => {
+    if (!focus || !focus.folder_id) return;
+    const fid = focus.folder_id;
+    const path = new Set<number>();
+    let cur: number | null = fid;
+    while (cur !== null && !path.has(cur)) {
+      path.add(cur);
+      const f = folders.find(x => x.id === cur);
+      cur = f ? f.parent_id : null;
+    }
+    setRevealPath(path);
+    setFilter('');
+    pendingFocus.current = focus;
+    if (selectedFolder === fid) { loadCreds(fid); loadFilesContainer(fid); } else setSelectedFolder(fid);
+  }, [focus?.key, folders.length]);
   useEffect(() => {
     if (selectedFolder !== null) { loadCreds(selectedFolder); loadFilesContainer(selectedFolder); }
   }, [selectedFolder]);
@@ -941,7 +964,7 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
         <div className="flex-1 overflow-y-auto py-1 relative" onClick={() => setCtxMenu(null)}>
           {rootFolders.map(f => (
             <FolderNode key={f.id} folder={f} folders={filteredFolders} selectedId={selectedFolder}
-              onSelect={setSelectedFolder} onMenu={onMenu} depth={0} forceExpand={!!filter} highlight={filter}
+              onSelect={setSelectedFolder} onMenu={onMenu} depth={0} forceExpand={!!filter} highlight={filter} revealPath={revealPath}
               dragActive={dragCredId !== null} dragOverFolderId={dragOverFolderId}
               onDragOverFolder={setDragOverFolderId}
               onDropCred={folderId => { if (dragCredId !== null) moveCredToFolder(dragCredId, folderId); setDragCredId(null); setDragOverFolderId(null); }} />
@@ -2741,7 +2764,7 @@ function isTaskOverdue(t: Task) {
 const TASKS_VIEW_KEY = 'wp_tasks_view';
 const TASKS_ARCHIVE_DAYS_KEY = 'wp_tasks_archive_days';
 
-function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
+function TasksSection({ token, isAdmin, openTaskId, onTaskOpened }: { token: string; isAdmin: boolean; openTaskId?: number | null; onTaskOpened?: () => void }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [meta, setMeta] = useState<TaskMeta | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2784,6 +2807,14 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [deleting, setDeleting] = useState(false);
   const [detailModal, setDetailModal] = useState<Task | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<Task | null>(null);
+  useEffect(() => {
+    if (!openTaskId) return;
+    fetch(`${TASKS_URL}?resource=tasks&id=${openTaskId}`, { headers: { 'X-Admin-Token': token } })
+      .then(r => r.json())
+      .then(d => { if (d && d.id) setDetailModal(d); else toast.error('Задача не найдена или нет доступа'); })
+      .catch(() => toast.error('Не удалось открыть задачу'))
+      .finally(() => onTaskOpened?.());
+  }, [openTaskId]);
 
   const changeView = (v: 'table' | 'cards' | 'board') => {
     setView(v);
@@ -4303,6 +4334,21 @@ export default function WorkPanel() {
   });
   const [unreadTickets, setUnreadTickets] = useState(0);
   const [pwdGenOpen, setPwdGenOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [openTaskId, setOpenTaskId] = useState<number | null>(null);
+  const [credFocus, setCredFocus] = useState<(SearchNav & { key: number }) | null>(null);
+  useEffect(() => {
+    const h = () => setSearchOpen(true);
+    window.addEventListener('global-search-open', h);
+    return () => window.removeEventListener('global-search-open', h);
+  }, []);
+  const handleSearchNav = (it: SearchItem) => {
+    const n = it.nav;
+    if (it.section === 'credentials') { setTab('credentials'); setCredFocus({ ...n, key: Date.now() }); }
+    else if (it.section === 'tickets' && n.ticket_id) { setTab('tickets'); setOpenTicketId(n.ticket_id); }
+    else if (it.section === 'tasks' && n.task_id) { setTab('tasks'); setOpenTaskId(n.task_id); }
+    else if (n.tab) setTab(n.tab as Tab);
+  };
   const authed = !!authInfo;
   useEffect(() => {
     if (!authed) return;
@@ -4472,9 +4518,20 @@ export default function WorkPanel() {
                         {t.label}
                       </button>
                     ))}
+                    <div className="my-1 border-t border-border" />
+                    <button onClick={() => { setSearchOpen(true); setAdminMenuOpen(false); }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-left hover:bg-secondary/60 transition-colors">
+                      <Icon name="Search" size={14} />
+                      Глобальный поиск
+                    </button>
                   </div>
                 )}
               </div>
+            )}
+            {!isAdminRole && (
+              <button onClick={() => setSearchOpen(true)} className="text-muted-foreground hover:text-foreground transition-colors p-1.5" title="Глобальный поиск">
+                <Icon name="Search" size={16} />
+              </button>
             )}
             <div className="ml-2 flex items-center gap-2 text-xs text-muted-foreground">
               <Icon name="User" size={13} />
@@ -4489,7 +4546,7 @@ export default function WorkPanel() {
       </header>
 
       <main className="flex-1 overflow-hidden relative z-10">
-        {activeTab === 'credentials' && <CredentialsSection isAdmin={authInfo.role === 'admin'} />}
+        {activeTab === 'credentials' && <CredentialsSection isAdmin={authInfo.role === 'admin'} focus={credFocus} />}
         {activeTab === 'updates' && (
           <div className="container py-6">
             <UpdatesSection />
@@ -4502,7 +4559,7 @@ export default function WorkPanel() {
         )}
         {activeTab === 'tasks' && (
           <div className="container py-6">
-            <TasksSection token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={authInfo.role === 'admin'} />
+            <TasksSection token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={authInfo.role === 'admin'} openTaskId={openTaskId} onTaskOpened={() => setOpenTaskId(null)} />
           </div>
         )}
         {activeTab === 'admin-users' && isAdminRole && (
@@ -4532,6 +4589,7 @@ export default function WorkPanel() {
         )}
       </main>
 
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} apiUrl={API_URL} token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={isAdminRole} onNavigate={handleSearchNav} />
       <TaskReminder token={localStorage.getItem(TOKEN_KEY) || ''} userId={authInfo.user_id} />
       <NewTicketNotifier token={localStorage.getItem(TOKEN_KEY) || ''} isAdmin={isAdminRole} onOpenTicket={handleOpenTicket} />
       <NewClientMessageNotifier token={localStorage.getItem(TOKEN_KEY) || ''} />

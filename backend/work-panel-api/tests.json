@@ -6,6 +6,13 @@
       "path": "/?resource=folders",
       "expectedStatus": 401,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Search without token returns 401",
+      "method": "GET",
+      "path": "/?resource=search&q=test",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
     }
   ]
 }

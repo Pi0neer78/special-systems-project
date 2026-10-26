@@ -1,4 +1,5 @@
 import json
+import re
 import os
 import hashlib
 import hmac
@@ -92,6 +93,40 @@ def decode_token(token: str, conn) -> dict:
             if hmac.compare_digest(token or '', expected):
                 return c
     return None
+
+SEARCH_LIMIT = 100
+
+
+def build_matcher(q: str, case_sensitive: bool, whole_word: bool):
+    pattern = re.escape(q)
+    if whole_word:
+        pattern = r'(?<!\w)' + pattern + r'(?!\w)'
+    return re.compile(pattern, 0 if case_sensitive else re.IGNORECASE)
+
+
+def find_match(rx, fields):
+    """fields: [(метка, значение)]; возвращает (метка, отрывок, начало, длина) или None."""
+    for label, value in fields:
+        if not value:
+            continue
+        text = str(value)
+        m = rx.search(text)
+        if m:
+            start = max(0, m.start() - 30)
+            end = min(len(text), m.end() + 50)
+            prefix = '…' if start > 0 else ''
+            suffix = '…' if end < len(text) else ''
+            snippet = prefix + text[start:end].replace('\n', ' ') + suffix
+            return label, snippet, len(prefix) + m.start() - start, m.end() - m.start()
+    return None
+
+
+def make_item(section, kind, title, subtitle, hit, nav):
+    label, snippet, hs, hl = hit
+    return {
+        'section': section, 'kind': kind, 'title': title, 'subtitle': subtitle,
+        'field': label, 'snippet': snippet, 'hl_start': hs, 'hl_len': hl, 'nav': nav,
+    }
 
 
 def handler(event: dict, context) -> dict:
@@ -516,6 +551,163 @@ def handler(event: dict, context) -> dict:
                 """, (body.get('new_version'), body.get('update_date'), body.get('client_database_id')))
                 conn.commit()
                 return ok({'id': new_id})
+
+        # ── GLOBAL SEARCH ───────────────────────────────────────────────────────
+        if resource == 'search' and method == 'GET':
+            q = (qs.get('q') or '').strip()
+            if not q:
+                return err('q required')
+            rx = build_matcher(q, qs.get('case') == '1', qs.get('whole') == '1')
+            is_admin = caller['role'] == 'admin'
+            uid = caller['user_id']
+            wanted = set((qs.get('sections') or '').split(','))
+            admin_only = {'users', 'clients', 'databases', 'work_types', 'planned_works'}
+            if not is_admin:
+                wanted -= admin_only
+            results = {}
+
+            def add(section, item):
+                lst = results.setdefault(section, [])
+                if len(lst) < SEARCH_LIMIT:
+                    lst.append(item)
+
+            if 'credentials' in wanted:
+                cur.execute(f"SELECT id, parent_id, name, is_private FROM {SCHEMA}.credential_folders")
+                folders = {r['id']: dict(r) for r in cur.fetchall()}
+
+                def folder_hidden(fid):
+                    while fid is not None and fid in folders:
+                        if folders[fid]['is_private']:
+                            return True
+                        fid = folders[fid]['parent_id']
+                    return False
+
+                def folder_path(fid):
+                    names = []
+                    while fid is not None and fid in folders:
+                        names.append(folders[fid]['name'])
+                        fid = folders[fid]['parent_id']
+                    return ' / '.join(reversed(names))
+
+                for f in folders.values():
+                    if not is_admin and folder_hidden(f['id']):
+                        continue
+                    hit = find_match(rx, [('Название раздела', f['name'])])
+                    if hit:
+                        add('credentials', make_item('credentials', 'folder', f['name'], folder_path(f['parent_id']) or 'Раздел', hit, {'folder_id': f['id']}))
+                cur.execute(f"""
+                    SELECT id, folder_id, name, login, login1, login2, login3, ip, notes, is_private
+                    FROM {SCHEMA}.credentials WHERE is_files_container=FALSE ORDER BY name
+                """)
+                for c in cur.fetchall():
+                    if not is_admin and (c['is_private'] or folder_hidden(c['folder_id'])):
+                        continue
+                    hit = find_match(rx, [
+                        ('Название', c['name']), ('Логин', c['login']), ('Логин 1', c['login1']),
+                        ('Логин 2', c['login2']), ('Логин 3', c['login3']), ('IP', c['ip']), ('Заметки', c['notes']),
+                    ])
+                    if hit:
+                        add('credentials', make_item('credentials', 'credential', c['name'], folder_path(c['folder_id']), hit, {'folder_id': c['folder_id'], 'credential_id': c['id']}))
+                cur.execute(f"""
+                    SELECT cf.id, cf.file_name, cf.description, c.folder_id, c.is_private
+                    FROM {SCHEMA}.credential_files cf JOIN {SCHEMA}.credentials c ON c.id = cf.credential_id
+                    ORDER BY cf.file_name
+                """)
+                for f in cur.fetchall():
+                    if not is_admin and (f['is_private'] or folder_hidden(f['folder_id'])):
+                        continue
+                    hit = find_match(rx, [('Имя файла', f['file_name']), ('Описание файла', f['description'])])
+                    if hit:
+                        add('credentials', make_item('credentials', 'file', f['file_name'], 'Файл · ' + folder_path(f['folder_id']), hit, {'folder_id': f['folder_id'], 'files': True}))
+
+            if 'tickets' in wanted:
+                where = '' if is_admin else f"WHERE t.assignee_id = {int(uid)}"
+                cur.execute(f"""
+                    SELECT t.id, t.problem_type, t.description, t.extra_info, t.result, c.name AS client_name
+                    FROM {SCHEMA}.tickets t LEFT JOIN {SCHEMA}.clients c ON c.id = t.client_id
+                    {where} ORDER BY t.id DESC
+                """)
+                for t in cur.fetchall():
+                    hit = find_match(rx, [
+                        ('Номер', str(t['id'])), ('Тип заявки', t['problem_type']), ('Описание', t['description']),
+                        ('Доп. информация', t['extra_info']), ('Результат', t['result']), ('Клиент', t['client_name']),
+                    ])
+                    if hit:
+                        add('tickets', make_item('tickets', 'ticket', f"Заявка №{t['id']}: {t['problem_type'] or ''}", t['client_name'] or '', hit, {'ticket_id': t['id']}))
+
+            if 'tasks' in wanted:
+                where = '' if is_admin else f"""WHERE (t.author_id = {int(uid)} OR t.assignee_id = {int(uid)}
+                    OR t.id IN (SELECT task_id FROM {SCHEMA}.task_watchers WHERE user_id = {int(uid)}))"""
+                cur.execute(f"SELECT t.id, t.title, t.description, t.is_archived FROM {SCHEMA}.tasks t {where} ORDER BY t.id DESC")
+                for t in cur.fetchall():
+                    hit = find_match(rx, [('Название', t['title']), ('Описание', t['description'])])
+                    if hit:
+                        add('tasks', make_item('tasks', 'task', t['title'], 'В архиве' if t['is_archived'] else 'Задача', hit, {'task_id': t['id']}))
+
+            if 'users' in wanted:
+                cur.execute(f"SELECT id, login, full_name, phone, description FROM {SCHEMA}.admin_users ORDER BY full_name")
+                for u in cur.fetchall():
+                    hit = find_match(rx, [('ФИО', u['full_name']), ('Логин', u['login']), ('Телефон', u['phone']), ('Описание', u['description'])])
+                    if hit:
+                        add('users', make_item('users', 'user', u['full_name'] or u['login'], u['login'], hit, {'tab': 'admin-users'}))
+
+            if 'clients' in wanted:
+                cur.execute(f"""
+                    SELECT id, name, login, inn, address, director_name, director_phone, director_email,
+                           accountant_name, accountant_phone, accountant_email, contact_name, contact_phone, contact_email
+                    FROM {SCHEMA}.clients ORDER BY name
+                """)
+                for c in cur.fetchall():
+                    hit = find_match(rx, [
+                        ('Название', c['name']), ('Логин', c['login']), ('ИНН', c['inn']), ('Адрес', c['address']),
+                        ('Директор', c['director_name']), ('Тел. директора', c['director_phone']), ('Email директора', c['director_email']),
+                        ('Бухгалтер', c['accountant_name']), ('Тел. бухгалтера', c['accountant_phone']), ('Email бухгалтера', c['accountant_email']),
+                        ('Контактное лицо', c['contact_name']), ('Тел. контакта', c['contact_phone']), ('Email контакта', c['contact_email']),
+                    ])
+                    if hit:
+                        add('clients', make_item('clients', 'client', c['name'], c['inn'] or '', hit, {'tab': 'admin-clients'}))
+
+            if 'databases' in wanted:
+                cur.execute(f"SELECT id, config_name, rs_code, actual_config_version, min_platform_version FROM {SCHEMA}.config_databases ORDER BY config_name")
+                for d in cur.fetchall():
+                    hit = find_match(rx, [
+                        ('Конфигурация', d['config_name']), ('Код РС', d['rs_code']),
+                        ('Версия конфигурации', d['actual_config_version']), ('Версия платформы', d['min_platform_version']),
+                    ])
+                    if hit:
+                        add('databases', make_item('databases', 'config_db', d['config_name'], 'Конфигурация', hit, {'tab': 'admin-databases'}))
+                cur.execute(f"""
+                    SELECT cd.id, cd.comment, cd.current_config_version, c.name AS client_name, g.config_name
+                    FROM {SCHEMA}.client_databases cd
+                    LEFT JOIN {SCHEMA}.clients c ON c.id = cd.client_id
+                    LEFT JOIN {SCHEMA}.config_databases g ON g.id = cd.config_database_id
+                """)
+                for d in cur.fetchall():
+                    hit = find_match(rx, [('Комментарий', d['comment']), ('Версия', d['current_config_version'])])
+                    if hit:
+                        add('databases', make_item('databases', 'client_db', f"{d['config_name'] or ''} — {d['client_name'] or ''}", 'База клиента', hit, {'tab': 'admin-clients'}))
+
+            if 'work_types' in wanted:
+                cur.execute(f"SELECT id, name FROM {SCHEMA}.work_types ORDER BY name")
+                for w in cur.fetchall():
+                    hit = find_match(rx, [('Название', w['name'])])
+                    if hit:
+                        add('work_types', make_item('work_types', 'work_type', w['name'], 'Вид работ', hit, {'tab': 'admin-work-types'}))
+
+            if 'planned_works' in wanted:
+                cur.execute(f"""
+                    SELECT pw.id, pw.description, c.name AS client_name, wt.name AS work_type
+                    FROM {SCHEMA}.planned_works pw
+                    LEFT JOIN {SCHEMA}.clients c ON c.id = pw.client_id
+                    LEFT JOIN {SCHEMA}.work_types wt ON wt.id = pw.work_type_id
+                    ORDER BY pw.id DESC
+                """)
+                for w in cur.fetchall():
+                    hit = find_match(rx, [('Описание', w['description']), ('Клиент', w['client_name']), ('Вид работ', w['work_type'])])
+                    if hit:
+                        add('planned_works', make_item('planned_works', 'planned_work', f"{w['work_type'] or 'Плановая работа'} — {w['client_name'] or ''}", 'Плановая работа', hit, {'tab': 'admin-planned-works'}))
+
+            return ok({'results': results, 'total': sum(len(v) for v in results.values())})
 
         # ── USERS LIST (для выбора в форме обновления) ───────────────────────────
         if resource == 'users':
