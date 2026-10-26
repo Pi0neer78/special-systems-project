@@ -234,11 +234,14 @@ function sortFiles(files: CredFile[], sort: FileSort): CredFile[] {
   return arr;
 }
 
+const isImageFile = (name: string) => ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(name.split('.').pop()?.toLowerCase() || '');
+
 function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number; onCountChange?: (count: number) => void }) {
   const [files, setFiles] = useState<CredFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [preview, setPreview] = useState<CredFile | null>(null);
   const [sort, setSort] = useState<FileSort>('none');
   const [editing, setEditing] = useState<{ id: number; field: 'file_name' | 'description'; value: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -329,12 +332,12 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
-                <th className="py-1.5 px-2 w-8"></th>
-                <th className="py-1.5 px-2 font-medium">Имя файла</th>
-                <th className="py-1.5 px-2 font-medium whitespace-nowrap">Дата</th>
-                <th className="py-1.5 px-2 font-medium whitespace-nowrap text-right">Размер</th>
-                <th className="py-1.5 px-2 font-medium">Описание</th>
-                <th className="py-1.5 px-2 w-20"></th>
+                <th className="py-0.5 px-2 w-8"></th>
+                <th className="py-0.5 px-2 font-medium">Имя файла</th>
+                <th className="py-0.5 px-2 font-medium whitespace-nowrap">Дата</th>
+                <th className="py-0.5 px-2 font-medium whitespace-nowrap text-right">Размер</th>
+                <th className="py-0.5 px-2 font-medium">Описание</th>
+                <th className="py-0.5 px-2 w-20"></th>
               </tr>
             </thead>
             <tbody>
@@ -342,9 +345,15 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
                 const ic = fileIconStyle(f.file_name);
                 const isEd = (field: 'file_name' | 'description') => editing?.id === f.id && editing.field === field;
                 return (
-                  <tr key={f.id} className="group border-b border-border/40 hover:bg-secondary/30 align-top">
-                    <td className="py-1.5 px-2"><Icon name={ic.icon} size={18} className={ic.color} /></td>
-                    <td className="py-1.5 px-2 min-w-[160px]">
+                  <tr key={f.id} className="group border-b border-border/40 hover:bg-secondary/30 align-middle">
+                    <td className="py-0.5 px-2">
+                      {isImageFile(f.file_name) ? (
+                        <button onClick={() => setPreview(f)} title="Просмотр" className="hover:scale-110 transition-transform">
+                          <Icon name={ic.icon} size={16} className={ic.color} />
+                        </button>
+                      ) : <Icon name={ic.icon} size={16} className={ic.color} />}
+                    </td>
+                    <td className="py-0.5 px-2 min-w-[160px]">
                       {isEd('file_name') ? (
                         <input autoFocus value={editing!.value} onChange={e => setEditing({ ...editing!, value: e.target.value })}
                           onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null); }}
@@ -353,9 +362,9 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
                         <a href={f.file_url} onClick={e => downloadFile(e, f.file_url, f.file_name)} className="break-all hover:text-primary transition-colors cursor-pointer">{f.file_name}</a>
                       )}
                     </td>
-                    <td className="py-1.5 px-2 text-xs text-muted-foreground whitespace-nowrap">{new Date(f.created_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-                    <td className="py-1.5 px-2 text-xs text-muted-foreground whitespace-nowrap text-right">{formatFileSize(f.file_size)}</td>
-                    <td className="py-1.5 px-2 min-w-[160px]">
+                    <td className="py-0.5 px-2 text-xs text-muted-foreground whitespace-nowrap">{new Date(f.created_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td className="py-0.5 px-2 text-xs text-muted-foreground whitespace-nowrap text-right">{formatFileSize(f.file_size)}</td>
+                    <td className="py-0.5 px-2 min-w-[160px]">
                       {isEd('description') ? (
                         <textarea autoFocus rows={2} value={editing!.value} onChange={e => setEditing({ ...editing!, value: e.target.value })}
                           onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); } if (e.key === 'Escape') setEditing(null); }}
@@ -368,7 +377,7 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
                           className="text-xs text-muted-foreground/60 hover:text-primary transition-colors">+ Добавить описание</button>
                       )}
                     </td>
-                    <td className="py-1.5 px-2 whitespace-nowrap text-right">
+                    <td className="py-0.5 px-2 whitespace-nowrap text-right">
                       <button onClick={() => setEditing({ id: f.id, field: 'file_name', value: f.file_name })} title="Переименовать"
                         className="p-1 rounded text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
                         <Icon name="Pencil" size={13} />
@@ -391,6 +400,12 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
           </table>
         </div>
       )}
+      <Dialog open={!!preview} onOpenChange={o => { if (!o) setPreview(null); }}>
+        <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col gap-3">
+          <DialogHeader><DialogTitle className="text-sm break-all pr-6">{preview?.file_name}</DialogTitle></DialogHeader>
+          {preview && <img src={preview.file_url} alt={preview.file_name} className="max-w-full max-h-[75vh] object-contain mx-auto rounded" />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -890,7 +905,7 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
             {/* Форма */}
             <div className="flex-1 overflow-y-auto p-5">
               {viewingFiles && filesContainer ? (
-                <div className="max-w-xl">
+                <div className="max-w-[43.2rem]">
                   <CredFilesBlock credentialId={filesContainer.id} onCountChange={setFilesCount} />
                 </div>
               ) : (selectedCred || dirty) ? (
