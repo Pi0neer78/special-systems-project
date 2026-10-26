@@ -242,7 +242,60 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [preview, setPreview] = useState<number | null>(null);
-  const [sort, setSort] = useState<FileSort>('none');
+  const [sort, setSortState] = useState<FileSort>(() => {
+    const v = localStorage.getItem('cred_files_sort') as FileSort | null;
+    return v && v in FILE_SORT_LABELS ? v : 'none';
+  });
+  const setSort = (v: FileSort) => { setSortState(v); localStorage.setItem('cred_files_sort', v); };
+  const [colW, setColW] = useState<Record<string, number>>(() => {
+    try { return JSON.parse(localStorage.getItem('cred_files_cols') || '{}'); } catch { return {}; }
+  });
+  const tableRef = useRef<HTMLTableElement>(null);
+  const COL_DEFAULT: Record<string, number> = { name: 276, date: 125, size: 70 };
+  const COL_INDEX: Record<string, number> = { name: 1, date: 2, size: 3, desc: 4 };
+  const saveCols = (w: Record<string, number>) => { setColW(w); localStorage.setItem('cred_files_cols', JSON.stringify(w)); };
+
+  const startResize = (key: string, e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const th = (e.currentTarget as HTMLElement).parentElement as HTMLElement;
+    const startX = e.clientX;
+    const startW = th.getBoundingClientRect().width;
+    let last = startW;
+    const move = (ev: MouseEvent) => {
+      last = Math.max(50, Math.round(startW + ev.clientX - startX));
+      setColW(prev => ({ ...prev, [key]: last }));
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      document.body.style.cursor = '';
+      setColW(prev => { localStorage.setItem('cred_files_cols', JSON.stringify(prev)); return prev; });
+    };
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  const autoFit = (key: string, e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const table = tableRef.current;
+    if (!table) return;
+    const idx = COL_INDEX[key] + 1;
+    const ctx = document.createElement('canvas').getContext('2d');
+    if (!ctx) return;
+    let max = 0;
+    table.querySelectorAll<HTMLElement>(`tr > :nth-child(${idx})`).forEach(cell => {
+      const cs = getComputedStyle(cell);
+      const target = (cell.querySelector('a, span, button') as HTMLElement | null) || cell;
+      const font = getComputedStyle(target);
+      ctx.font = `${font.fontWeight} ${font.fontSize} ${font.fontFamily}`;
+      const text = (target.textContent || '').split('\n');
+      const w = Math.max(...text.map(t => ctx.measureText(t).width));
+      max = Math.max(max, w + parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) + 8);
+    });
+    saveCols({ ...colW, [key]: Math.ceil(Math.max(50, max)) });
+  };
+
   const [editing, setEditing] = useState<{ id: number; field: 'file_name' | 'description'; value: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -359,22 +412,22 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
         </div>
         {sorted.length === 0 && <p className="text-xs text-muted-foreground py-1">Ничего не найдено</p>}
         <div className="overflow-x-auto">
-          <table className="w-full text-sm table-fixed">
+          <table ref={tableRef} className="w-full text-sm table-fixed">
             <colgroup>
               <col style={{ width: 32 }} />
-              <col style={{ width: 276 }} />
-              <col style={{ width: 125 }} />
-              <col style={{ width: 70 }} />
-              <col />
+              <col style={{ width: colW.name ?? COL_DEFAULT.name }} />
+              <col style={{ width: colW.date ?? COL_DEFAULT.date }} />
+              <col style={{ width: colW.size ?? COL_DEFAULT.size }} />
+              <col style={colW.desc ? { width: colW.desc } : undefined} />
               <col style={{ width: 80 }} />
             </colgroup>
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
                 <th className="py-0.5 px-2 w-8"></th>
-                <th className="py-0.5 px-2 font-medium">Имя файла</th>
-                <th className="py-0.5 px-2 font-medium whitespace-nowrap">Дата</th>
-                <th className="py-0.5 px-2 font-medium whitespace-nowrap text-right">Размер</th>
-                <th className="py-0.5 px-2 font-medium">Описание</th>
+                <th className="py-1.5 px-2 font-medium relative select-none">Имя файла<span onMouseDown={e => startResize('name', e)} onDoubleClick={e => autoFit('name', e)} title="Потяните, чтобы изменить ширину; двойной щелчок — по содержимому" className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40" /></th>
+                <th className="py-1.5 px-2 font-medium relative select-none whitespace-nowrap">Дата<span onMouseDown={e => startResize('date', e)} onDoubleClick={e => autoFit('date', e)} title="Потяните, чтобы изменить ширину; двойной щелчок — по содержимому" className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40" /></th>
+                <th className="py-1.5 px-2 font-medium relative select-none whitespace-nowrap text-right">Размер<span onMouseDown={e => startResize('size', e)} onDoubleClick={e => autoFit('size', e)} title="Потяните, чтобы изменить ширину; двойной щелчок — по содержимому" className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40" /></th>
+                <th className="py-1.5 px-2 font-medium relative select-none">Описание<span onMouseDown={e => startResize('desc', e)} onDoubleClick={e => autoFit('desc', e)} title="Потяните, чтобы изменить ширину; двойной щелчок — по содержимому" className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40" /></th>
                 <th className="py-0.5 px-2 w-20"></th>
               </tr>
             </thead>
