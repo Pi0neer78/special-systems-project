@@ -12,6 +12,9 @@ const TICKETS_URL = 'https://functions.poehali.dev/4866cc97-c798-42d4-a280-d3507
 const CLIENT_TOKEN_KEY = 'client_token';
 const SPLIT_WIDTH_KEY = 'pa_split_width';
 const DEFAULT_SPLIT = 50;
+const POLL_INTERVAL_MS = 20000;
+
+type IncomingMessage = { id: number; ticket_id: number; sender_name: string | null; message: string | null; file_name: string | null };
 
 const PRIORITY_LABELS: Record<string, { label: string; color: string }> = {
   low:    { label: 'Низкий',  color: 'text-muted-foreground' },
@@ -55,6 +58,7 @@ type Ticket = {
   resolved_at: string | null;
   status_changed_at: string;
   assignee_name: string | null;
+  unread_count?: number;
 };
 
 type DbType = 'file' | 'server' | 'http';
@@ -204,14 +208,51 @@ function TicketsPanel({ token, onNewClick, refreshSignal }: { token: string; onN
   const [filterStatus, setFilterStatus] = useState('');
   const [detailTicket, setDetailTicket] = useState<Ticket | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const data = await fetch(`${TICKETS_URL}?resource=tickets`, { headers: { 'X-Client-Token': token } }).then(r => r.json());
-    setLoading(false);
+  const [toasts, setToasts] = useState<IncomingMessage[]>([]);
+  const lastMessageId = useRef<number | null>(null);
+  const openTicketId = useRef<number | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => { openTicketId.current = detailTicket?.id ?? null; }, [detailTicket]);
+  useEffect(() => { audioRef.current = new Audio('/icq-message.mp3'); }, []);
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    const data = await fetch(`${TICKETS_URL}?resource=tickets`, { headers: { 'X-Client-Token': token } }).then(r => r.json()).catch(() => null);
+    if (!silent) setLoading(false);
     if (Array.isArray(data)) setTickets(data);
   }, [token]);
 
   useEffect(() => { load(); }, [load, refreshSignal]);
+
+  const dismissToast = (id: number) => setToasts(prev => prev.filter(t => t.id !== id));
+
+  const checkMessages = useCallback(async () => {
+    const data = await fetch(`${TICKETS_URL}?resource=client-messages`, { headers: { 'X-Client-Token': token } }).then(r => r.json()).catch(() => null);
+    if (!Array.isArray(data)) return;
+    const maxId = data.reduce((m: number, x: IncomingMessage) => Math.max(m, x.id), 0);
+    if (lastMessageId.current === null) { lastMessageId.current = maxId; return; }
+    const prev = lastMessageId.current;
+    const fresh: IncomingMessage[] = data
+      .filter((x: IncomingMessage) => x.id > prev && x.ticket_id !== openTicketId.current)
+      .sort((a: IncomingMessage, b: IncomingMessage) => a.id - b.id);
+    lastMessageId.current = Math.max(prev, maxId);
+    if (fresh.length > 0) {
+      setToasts(cur => [...cur, ...fresh].slice(-4));
+      audioRef.current?.play().catch(() => undefined);
+      fresh.forEach(m => setTimeout(() => dismissToast(m.id), 12000));
+    }
+    load(true);
+  }, [token, load]);
+
+  useEffect(() => {
+    checkMessages();
+    const timer = setInterval(checkMessages, POLL_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, [checkMessages]);
+
+  const closeDetail = () => { setDetailTicket(null); load(true); };
+  const totalUnread = tickets.reduce((n, t) => n + (t.unread_count || 0), 0);
 
   const filtered = filterStatus ? tickets.filter(t => t.status === filterStatus) : tickets;
 
@@ -278,6 +319,11 @@ function TicketsPanel({ token, onNewClick, refreshSignal }: { token: string; onN
                   <p className="text-xs text-muted-foreground mt-0.5">{t.problem_type}</p>
                 </div>
                 <div className="text-right shrink-0">
+                  {!!t.unread_count && t.unread_count > 0 && (
+                    <span className="inline-flex items-center gap-1 mb-0.5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-4">
+                      <Icon name="MessageCircle" size={10} /> {t.unread_count}
+                    </span>
+                  )}
                   <p className="text-xs text-muted-foreground">#{t.id}</p>
                   <p className="text-xs text-muted-foreground">{new Date(t.submitted_at).toLocaleDateString('ru')}</p>
                   {t.deadline && <p className={`text-xs ${overdue ? 'text-red-400 font-semibold' : 'text-muted-foreground'}`}>до {new Date(t.deadline).toLocaleDateString('ru')}</p>}
@@ -288,12 +334,32 @@ function TicketsPanel({ token, onNewClick, refreshSignal }: { token: string; onN
         })}
       </div>
 
-      <Dialog open={!!detailTicket} onOpenChange={() => setDetailTicket(null)}>
+      <div className="fixed bottom-4 right-4 z-[100] flex flex-col gap-2 w-80 max-w-[calc(100vw-2rem)]">
+        {toasts.map(m => (
+          <div key={m.id} onClick={() => { const t = tickets.find(x => x.id === m.ticket_id); dismissToast(m.id); if (t) setDetailTicket(t); }}
+            className="cursor-pointer rounded-lg border border-primary/40 bg-card text-card-foreground shadow-xl p-3 animate-in slide-in-from-right-8 fade-in duration-300">
+            <div className="flex items-start gap-2">
+              <div className="h-8 w-8 shrink-0 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
+                <Icon name="MessageCircle" size={16} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold truncate">{m.sender_name || 'Поддержка'} · заявка #{m.ticket_id}</p>
+                <p className="text-xs text-muted-foreground line-clamp-3 break-words">{m.message || (m.file_name ? `Файл: ${m.file_name}` : 'Новое сообщение')}</p>
+              </div>
+              <button onClick={e => { e.stopPropagation(); dismissToast(m.id); }} className="text-muted-foreground hover:text-foreground">
+                <Icon name="X" size={14} />
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <Dialog open={!!detailTicket} onOpenChange={(o) => { if (!o) closeDetail(); }}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-display uppercase tracking-wide">Заявка #{detailTicket?.id}</DialogTitle>
           </DialogHeader>
-          {detailTicket && <TicketDetail ticket={detailTicket} token={token} onClose={() => setDetailTicket(null)} />}
+          {detailTicket && <TicketDetail ticket={detailTicket} token={token} onClose={closeDetail} />}
         </DialogContent>
       </Dialog>
     </div>

@@ -412,6 +412,11 @@ def handler(event: dict, context) -> dict:
                     WHERE m.ticket_id = t.id AND m.sender_type = 'client'
                       AND m.id > COALESCE((SELECT r.last_read_message_id FROM {SCHEMA}.ticket_reads r
                                            WHERE r.ticket_id = t.id AND r.staff_id = {int(admin_user_id)}), 0)) AS unread_count"""
+            elif is_client:
+                unread_sql = f"""(SELECT COUNT(*) FROM {SCHEMA}.ticket_messages m
+                    WHERE m.ticket_id = t.id AND m.sender_type = 'staff'
+                      AND m.id > COALESCE((SELECT r.last_read_message_id FROM {SCHEMA}.ticket_client_reads r
+                                           WHERE r.ticket_id = t.id AND r.client_id = {int(client_id_from_token)}), 0)) AS unread_count"""
             else:
                 unread_sql = "0 AS unread_count"
             cur.execute(f"""
@@ -731,6 +736,23 @@ def handler(event: dict, context) -> dict:
     if resource == 'client-messages' and method == 'GET':
         admin_token = headers.get('X-Admin-Token', '')
         admin_user_id, admin_role, _ = verify_admin_token(admin_token) if admin_token else (None, None, None)
+        client_tok = headers.get('X-Client-Token', '')
+        cid = verify_client_token(client_tok) if client_tok else None
+        if admin_user_id is None and cid is not None:
+            conn = get_conn()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute(f"""
+                SELECT m.id, m.ticket_id, m.sender_name, m.message, m.file_name, m.created_at
+                FROM {SCHEMA}.ticket_messages m
+                JOIN {SCHEMA}.tickets t ON t.id = m.ticket_id
+                WHERE m.sender_type = 'staff' AND t.client_id = {int(cid)}
+                ORDER BY m.id DESC
+                LIMIT 30
+            """)
+            rows = cur.fetchall()
+            cur.close()
+            conn.close()
+            return resp(200, rows)
         if admin_user_id is None:
             return resp(401, {'error': 'Не авторизован'})
         conn = get_conn()
@@ -808,6 +830,16 @@ def handler(event: dict, context) -> dict:
                     SET last_read_message_id = GREATEST({SCHEMA}.ticket_reads.last_read_message_id, EXCLUDED.last_read_message_id),
                         updated_at = now()
                 """, (ticket_id, admin_user_id, ticket_id))
+                conn.commit()
+            if is_client:
+                cur.execute(f"""
+                    INSERT INTO {SCHEMA}.ticket_client_reads (ticket_id, client_id, last_read_message_id)
+                    SELECT %s, %s, COALESCE(MAX(id), 0) FROM {SCHEMA}.ticket_messages
+                    WHERE ticket_id = %s AND sender_type = 'staff'
+                    ON CONFLICT (ticket_id, client_id) DO UPDATE
+                    SET last_read_message_id = GREATEST({SCHEMA}.ticket_client_reads.last_read_message_id, EXCLUDED.last_read_message_id),
+                        updated_at = now()
+                """, (ticket_id, client_id_from_token, ticket_id))
                 conn.commit()
             cur.close()
             conn.close()
