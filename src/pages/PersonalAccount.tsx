@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Input } from '@/components/ui/input';
 import ThemeToggle from '@/components/ThemeToggle';
 import TicketChat from '@/components/TicketChat';
+import { exportTicketsToExcel, printTickets } from '@/lib/ticketsExport';
 
 const TICKETS_URL = 'https://functions.poehali.dev/4866cc97-c798-42d4-a280-d35071d704a8';
 const CLIENT_TOKEN_KEY = 'client_token';
@@ -204,7 +205,7 @@ const STATUS_FILTERS = [
   { value: 'cancelled', label: 'Отменённые' },
 ];
 
-function TicketsPanel({ token, onNewClick, refreshSignal, onUnreadChange }: { token: string; onNewClick: () => void; refreshSignal: number; onUnreadChange?: (n: number) => void }) {
+function TicketsPanel({ token, clientName, onNewClick, refreshSignal, onUnreadChange }: { token: string; clientName: string; onNewClick: () => void; refreshSignal: number; onUnreadChange?: (n: number) => void }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatuses, setFilterStatuses] = useState<string[]>(['new', 'in_progress']);
@@ -268,9 +269,15 @@ function TicketsPanel({ token, onNewClick, refreshSignal, onUnreadChange }: { to
           <p className="text-xs text-muted-foreground">{filtered.length} шт.</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={load} className="text-muted-foreground hover:text-foreground transition-colors p-1.5" title="Обновить">
+          <button onClick={() => load()} className="text-muted-foreground hover:text-foreground transition-colors p-1.5" title="Обновить">
             <Icon name="RefreshCw" size={14} />
           </button>
+          <Button onClick={() => printTickets(filtered, clientName)} disabled={filtered.length === 0} size="sm" variant="outline" className="h-7 text-xs gap-1">
+            <Icon name="Printer" size={12} /> Печать
+          </Button>
+          <Button onClick={() => exportTicketsToExcel(filtered, clientName)} disabled={filtered.length === 0} size="sm" variant="outline" className="h-7 text-xs gap-1">
+            <Icon name="FileSpreadsheet" size={12} /> Экспорт в Excel
+          </Button>
           <Button onClick={onNewClick} size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 h-7 text-xs gap-1">
             <Icon name="Plus" size={12} /> Подать заявку
           </Button>
@@ -574,7 +581,7 @@ export default function PersonalAccount() {
       <div ref={containerRef} className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 56px)' }}>
         {/* Левая панель — заявки */}
         <div className="flex flex-col overflow-hidden border-r border-border" style={{ width: `${splitWidth}%` }}>
-          <TicketsPanel token={token} onNewClick={() => setShowNew(true)} refreshSignal={ticketsRefresh} onUnreadChange={setUnreadTotal} />
+          <TicketsPanel token={token} clientName={clientInfo.name} onNewClick={() => setShowNew(true)} refreshSignal={ticketsRefresh} onUnreadChange={setUnreadTotal} />
         </div>
 
         {/* Разделитель */}
