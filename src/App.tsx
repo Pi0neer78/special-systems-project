@@ -6,7 +6,6 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "next-themes";
 import Index from "./pages/Index";
-import Admin from "./pages/Admin";
 import WorkPanel from "./pages/WorkPanel";
 import PersonalAccount from "./pages/PersonalAccount";
 import Etiketka from "./pages/Etiketka";
@@ -23,7 +22,6 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Index />} />
-            <Route path="/admin" element={<Admin />} />
             <Route path="/etiketka" element={<Etiketka />} />
             <Route path="/work-panel" element={<WorkPanel />} />
             <Route path="/personal-account" element={<PersonalAccount />} />

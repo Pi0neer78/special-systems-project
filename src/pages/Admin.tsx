@@ -1,11 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import ThemeToggle from '@/components/ThemeToggle';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
@@ -13,7 +11,6 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 
-const AUTH_URL = 'https://functions.poehali.dev/115d85ec-a990-4455-824d-27487ad441c1';
 const API_URL  = 'https://functions.poehali.dev/b27360bd-f3d5-47be-87bd-a7bec06b9be0';
 const TOKEN_KEY = 'admin_token';
 
@@ -1449,77 +1446,12 @@ export function ClientsSection({ configDbs, onClientsChanged }: { configDbs: Con
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// LOGIN PAGE
-// ══════════════════════════════════════════════════════════════════════════════
-
-type AuthInfo = { role: 'admin' | 'user'; user_id: number; login: string; full_name?: string };
-
-function AdminLogin({ onLogin }: { onLogin: (info: AuthInfo) => void }) {
-  const [login, setLogin] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const submit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
-    const res = await fetch(AUTH_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ login, password }),
-    }).then(r => r.json());
-    setLoading(false);
-    if (res.token) {
-      localStorage.setItem(TOKEN_KEY, res.token);
-      onLogin({ role: res.role, user_id: res.user_id, login: res.login || login, full_name: res.full_name });
-    } else {
-      setError(res.error || 'Неверный логин или пароль');
-    }
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center grid-bg">
-      <ThemeToggle className="absolute top-4 right-4" />
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[400px] bg-primary/10 rounded-full blur-[120px]" />
-      </div>
-      <div className="relative w-full max-w-sm p-8 rounded-2xl bg-card border border-border shadow-2xl">
-        <div className="flex items-center gap-2.5 mb-8">
-          <span className="flex items-center justify-center w-9 h-9 rounded-md bg-primary/15 border border-primary/40">
-            <Icon name="ShieldCheck" className="text-primary" size={20} />
-          </span>
-          <div>
-            <div className="font-display text-lg uppercase tracking-wide">Спец<span className="text-primary">Системы</span></div>
-            <div className="text-xs text-muted-foreground font-mono">Панель администратора</div>
-          </div>
-        </div>
-        <form onSubmit={submit} className="space-y-4">
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Логин</label>
-            <Input value={login} onChange={e => setLogin(e.target.value)} className="bg-secondary/40 border-border focus-visible:ring-primary" autoComplete="username" />
-          </div>
-          <div>
-            <label className="text-xs text-muted-foreground mb-1 block">Пароль</label>
-            <Input type="password" value={password} onChange={e => setPassword(e.target.value)} className="bg-secondary/40 border-border focus-visible:ring-primary" autoComplete="current-password" />
-          </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-          <Button type="submit" disabled={loading} className="w-full bg-primary text-primary-foreground hover:bg-primary/90 h-10">
-            {loading ? 'Вход...' : 'Войти'}
-          </Button>
-        </form>
-      </div>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
 // WORK TYPES SECTION (справочник «Виды регламентных работ»)
 // ══════════════════════════════════════════════════════════════════════════════
 
 type WorkType = { id: number; name: string; duration_minutes: number; is_active: boolean };
 
-function WorkTypesSection() {
+export function WorkTypesSection() {
   const [items, setItems] = useState<WorkType[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<{ open: boolean; item?: WorkType }>({ open: false });
@@ -1663,114 +1595,6 @@ function WorkTypesSection() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// MAIN ADMIN PAGE
-// ══════════════════════════════════════════════════════════════════════════════
-
-type Tab = 'users' | 'clients' | 'databases' | 'work_types';
-
-export default function Admin() {
-  const [authInfo, setAuthInfo] = useState<AuthInfo | null>(null);
-  const [tab, setTab] = useState<Tab>('clients');
-  const [configDbs, setConfigDbs] = useState<ConfigDB[]>([]);
-  const [allClients, setAllClients] = useState<{ id: number; name: string }[]>([]);
-  const location = useLocation();
-  const fromWorkPanel = new URLSearchParams(location.search).get('from') === 'work-panel';
-
-  // Проверяем сохранённый токен при загрузке
-  useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) return;
-    fetch(AUTH_URL, { headers: { 'X-Admin-Token': token } })
-      .then(r => r.json())
-      .then(d => {
-        if (d.ok) setAuthInfo({ role: d.role, user_id: d.user_id, login: d.login, full_name: d.full_name });
-      })
-      .catch(() => {});
-  }, []);
-
-  // При входе устанавливаем дефолтный таб в зависимости от роли
-  const handleLogin = (info: AuthInfo) => {
-    setAuthInfo(info);
-    setTab(info.role === 'admin' ? 'users' : 'clients');
-  };
-
-  useEffect(() => {
-    if (!authInfo) return;
-    api('resource=databases').then(d => { if (Array.isArray(d)) setConfigDbs(d); });
-    api('resource=clients').then(d => {
-      if (Array.isArray(d)) setAllClients(d.map((c: { id: number; name: string }) => ({ id: c.id, name: c.name })));
-    });
-  }, [authInfo]);
-
-  const logout = () => {
-    if (fromWorkPanel) {
-      window.location.href = '/work-panel';
-      return;
-    }
-    localStorage.removeItem(TOKEN_KEY);
-    setAuthInfo(null);
-    setTab('clients');
-  };
-
-  if (!authInfo) return <AdminLogin onLogin={handleLogin} />;
-
-  const isAdmin = authInfo.role === 'admin';
-
-  const allTabs: { id: Tab; label: string; icon: string; adminOnly: boolean }[] = [
-    { id: 'users', label: 'Пользователи', icon: 'Users', adminOnly: true },
-    { id: 'clients', label: 'Клиенты', icon: 'Building2', adminOnly: false },
-    { id: 'databases', label: 'Базы данных', icon: 'Database', adminOnly: false },
-    { id: 'work_types', label: 'Виды работ', icon: 'ClipboardList', adminOnly: true },
-  ];
-  const tabs = allTabs.filter(t => !t.adminOnly || isAdmin);
-
-  return (
-    <div className="min-h-screen flex flex-col">
-      <header className="border-b border-border/60 bg-background/90 backdrop-blur-xl sticky top-0 z-40">
-        <div className="container flex items-center justify-between h-14">
-          <div className="flex items-center gap-2.5">
-            <span className="flex items-center justify-center w-8 h-8 rounded-md bg-primary/15 border border-primary/40">
-              <Icon name={isAdmin ? 'ShieldCheck' : 'User'} className="text-primary" size={17} />
-            </span>
-            <span className="font-display text-base uppercase tracking-wide">
-              Спец<span className="text-primary">Системы</span>
-            </span>
-            <span className="text-xs font-mono text-muted-foreground border border-border rounded px-2 py-0.5 hidden sm:inline">
-              {isAdmin ? 'Администратор' : (authInfo.full_name || authInfo.login)}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            {tabs.map(t => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm transition-all ${
-                  tab === t.id ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
-                }`}
-              >
-                <Icon name={t.icon} size={14} />
-                <span className="hidden sm:inline">{t.label}</span>
-              </button>
-            ))}
-            <ThemeToggle className="ml-1" />
-            <button onClick={logout} className="text-muted-foreground hover:text-destructive transition-colors p-1.5" title="Выйти">
-              <Icon name="LogOut" size={16} />
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="flex-1 container py-8">
-        {tab === 'users' && isAdmin && <UsersSection allClients={allClients} />}
-        {tab === 'clients' && <ClientsSection configDbs={configDbs} onClientsChanged={d => setAllClients(d.map(c => ({ id: c.id, name: c.name })))} />}
-        {tab === 'databases' && <DatabasesSection onLoaded={setConfigDbs} />}
-        {tab === 'work_types' && isAdmin && <WorkTypesSection />}
-      </main>
     </div>
   );
 }
