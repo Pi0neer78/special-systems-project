@@ -8,8 +8,8 @@ from psycopg2.extras import RealDictCursor
 
 SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 't_p34673685_special_systems_proj')
 ADMIN_LOGIN = 'Pioneer78'
-ADMIN_PASSWORD = 'Tytparol1!'
-SECRET_KEY = 'specsystems_admin_secret_2026'
+ADMIN_PASSWORD = os.environ['ADMIN_PASSWORD']
+SECRET_KEY = os.environ['ADMIN_TOKEN_SECRET']
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -90,38 +90,58 @@ def handler(event: dict, context) -> dict:
         password = body.get('password', '')
         access_key = body.get('access_key', '')
 
-        # Суперадмин — ключ не требуется
-        if login == ADMIN_LOGIN and password == ADMIN_PASSWORD:
+        ip = str(((event.get('requestContext') or {}).get('identity') or {}).get('sourceIp') or '')[:64]
+        key = 'admin-auth:' + login.lower()[:100]
+        conn = psycopg2.connect(os.environ['DATABASE_URL'])
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        def fail():
+            cur.execute(f"INSERT INTO {SCHEMA}.login_attempts (login_key, ip) VALUES (%s, %s)", (key, ip))
+            conn.commit()
+
+        cur.execute(f"SELECT COUNT(*) AS c FROM {SCHEMA}.login_attempts WHERE login_key=%s AND created_at > NOW() - INTERVAL '15 minutes'", (key,))
+        by_login = cur.fetchone()['c']
+        cur.execute(f"SELECT COUNT(*) AS c FROM {SCHEMA}.login_attempts WHERE ip=%s AND created_at > NOW() - INTERVAL '15 minutes'", (ip,))
+        by_ip = cur.fetchone()['c']
+        if by_login >= 5 or by_ip >= 30:
+            cur.close(); conn.close()
+            return {'statusCode': 429, 'headers': CORS, 'body': json.dumps({'error': 'Слишком много неудачных попыток. Попробуйте через 15 минут.'})}
+
+        if login == ADMIN_LOGIN and hmac.compare_digest(password, ADMIN_PASSWORD):
+            cur.execute(f"DELETE FROM {SCHEMA}.login_attempts WHERE login_key=%s", (key,))
+            conn.commit()
+            cur.close(); conn.close()
             token = make_token(ADMIN_LOGIN, 'admin', 0)
             return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'token': token, 'role': 'admin', 'user_id': 0})}
 
-        # Обычный пользователь из БД — обязателен ключ доступа
-        try:
-            conn = psycopg2.connect(os.environ['DATABASE_URL'])
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            pwd_hash = hashlib.sha256(password.encode()).hexdigest()
-            cur.execute(
-                f"SELECT id, login, full_name, access_key FROM {SCHEMA}.admin_users WHERE login=%s AND password_hash=%s AND is_active=TRUE",
-                (login, pwd_hash)
-            )
-            user = cur.fetchone()
-            cur.close()
-            conn.close()
-        except Exception as e:
-            return {'statusCode': 500, 'headers': CORS, 'body': json.dumps({'error': str(e)})}
+        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+        cur.execute(
+            f"SELECT id, login, full_name, access_key FROM {SCHEMA}.admin_users WHERE login=%s AND password_hash=%s AND is_active=TRUE",
+            (login, pwd_hash)
+        )
+        user = cur.fetchone()
 
         if not user:
+            fail()
+            cur.close(); conn.close()
             return {'statusCode': 401, 'headers': CORS, 'body': json.dumps({'error': 'Неверный логин или пароль'})}
 
         if not user['access_key']:
+            cur.close(); conn.close()
             return {'statusCode': 403, 'headers': CORS, 'body': json.dumps({'error': 'Для пользователя не сформирован ключ доступа. Обратитесь к администратору.', 'code': 'no_key_configured'})}
 
         if not access_key:
+            cur.close(); conn.close()
             return {'statusCode': 403, 'headers': CORS, 'body': json.dumps({'error': 'Требуется файл ключа доступа', 'code': 'key_required'})}
 
         if not hmac.compare_digest(access_key, user['access_key']):
+            fail()
+            cur.close(); conn.close()
             return {'statusCode': 403, 'headers': CORS, 'body': json.dumps({'error': 'Неверный файл ключа доступа', 'code': 'key_invalid'})}
 
+        cur.execute(f"DELETE FROM {SCHEMA}.login_attempts WHERE login_key=%s", (key,))
+        conn.commit()
+        cur.close(); conn.close()
         global _cached_users, _cached_ts
         _cached_users = None  # сброс кэша
         token = make_token(user['login'], 'user', user['id'])

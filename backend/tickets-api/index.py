@@ -10,10 +10,10 @@ import boto3
 from psycopg2.extras import RealDictCursor
 
 SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 't_p34673685_special_systems_proj')
-CLIENT_SECRET = 'specsystems_client_secret_2026'
-ADMIN_SECRET = 'specsystems_admin_secret_2026'
+CLIENT_SECRET = os.environ['CLIENT_TOKEN_SECRET']
+ADMIN_SECRET = os.environ['ADMIN_TOKEN_SECRET']
 ADMIN_LOGIN_HARDCODED = 'Pioneer78'
-ADMIN_PASSWORD_HARDCODED = 'Tytparol1!'
+ADMIN_PASSWORD_HARDCODED = os.environ['ADMIN_PASSWORD']
 
 CORS = {
     'Access-Control-Allow-Origin': '*',
@@ -135,6 +135,38 @@ def log_ticket_change(cur, ticket_id, actor_name, field, old_value, new_value):
     )
 
 
+MAX_FAILS_LOGIN = 5
+MAX_FAILS_IP = 30
+LOCK_WINDOW = "15 minutes"
+
+
+def login_locked(cur, login_key: str, ip: str) -> bool:
+    cur.execute(
+        f"SELECT COUNT(*) AS c FROM {SCHEMA}.login_attempts WHERE login_key=%s AND created_at > NOW() - INTERVAL '{LOCK_WINDOW}'",
+        (login_key,))
+    if cur.fetchone()['c'] >= MAX_FAILS_LOGIN:
+        return True
+    cur.execute(
+        f"SELECT COUNT(*) AS c FROM {SCHEMA}.login_attempts WHERE ip=%s AND created_at > NOW() - INTERVAL '{LOCK_WINDOW}'",
+        (ip,))
+    return cur.fetchone()['c'] >= MAX_FAILS_IP
+
+
+def login_fail(cur, conn, login_key: str, ip: str):
+    cur.execute(f"INSERT INTO {SCHEMA}.login_attempts (login_key, ip) VALUES (%s, %s)", (login_key, ip))
+    cur.execute(f"DELETE FROM {SCHEMA}.login_attempts WHERE created_at < NOW() - INTERVAL '1 day'")
+    conn.commit()
+
+
+def login_ok(cur, conn, login_key: str):
+    cur.execute(f"DELETE FROM {SCHEMA}.login_attempts WHERE login_key=%s", (login_key,))
+    conn.commit()
+
+
+def client_ip(event) -> str:
+    return str(((event.get('requestContext') or {}).get('identity') or {}).get('sourceIp') or '')[:64]
+
+
 def resp(status, body):
     return {'statusCode': status, 'headers': CORS, 'body': json.dumps(body, ensure_ascii=False, default=str)}
 
@@ -187,23 +219,32 @@ def handler(event: dict, context) -> dict:
         if not login or not password:
             return resp(400, {'error': 'Укажите логин и пароль'})
 
-        # Суперадмин
-        if login == ADMIN_LOGIN_HARDCODED and password == ADMIN_PASSWORD_HARDCODED:
+        ip = client_ip(event)
+        key = 'staff:' + login.lower()[:100]
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        if login_locked(cur, key, ip):
+            cur.close(); conn.close()
+            return resp(429, {'error': 'Слишком много неудачных попыток. Попробуйте через 15 минут.'})
+
+        if login == ADMIN_LOGIN_HARDCODED and hmac.compare_digest(password, ADMIN_PASSWORD_HARDCODED):
+            login_ok(cur, conn, key)
+            cur.close(); conn.close()
             token = make_admin_token(ADMIN_LOGIN_HARDCODED, 'admin', 0)
             return resp(200, {'token': token, 'user_id': 0, 'login': ADMIN_LOGIN_HARDCODED, 'full_name': 'Администратор', 'role': 'admin'})
 
         pwd_hash = hashlib.sha256(password.encode()).hexdigest()
-        conn = get_conn()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute(
             f"SELECT id, login, full_name FROM {SCHEMA}.admin_users WHERE login=%s AND password_hash=%s AND is_active=TRUE",
             (login, pwd_hash)
         )
         user = cur.fetchone()
-        cur.close()
-        conn.close()
         if not user:
+            login_fail(cur, conn, key, ip)
+            cur.close(); conn.close()
             return resp(401, {'error': 'Неверный логин или пароль'})
+        login_ok(cur, conn, key)
+        cur.close(); conn.close()
         token = make_admin_token(user['login'], 'user', user['id'])
         return resp(200, {'token': token, 'user_id': user['id'], 'login': user['login'], 'full_name': user['full_name'], 'role': 'user'})
 
@@ -242,18 +283,25 @@ def handler(event: dict, context) -> dict:
         password = body.get('password', '')
         if not login or not password:
             return resp(400, {'error': 'Укажите логин и пароль'})
+        ip = client_ip(event)
+        key = 'client:' + login.lower()[:100]
         pwd_hash = hashlib.sha256(password.encode()).hexdigest()
         conn = get_conn()
         cur = conn.cursor(cursor_factory=RealDictCursor)
+        if login_locked(cur, key, ip):
+            cur.close(); conn.close()
+            return resp(429, {'error': 'Слишком много неудачных попыток. Попробуйте через 15 минут.'})
         cur.execute(
             f"SELECT id, login, name FROM {SCHEMA}.clients WHERE login=%s AND password_hash=%s AND is_active=TRUE",
             (login, pwd_hash)
         )
         client = cur.fetchone()
-        cur.close()
-        conn.close()
         if not client:
+            login_fail(cur, conn, key, ip)
+            cur.close(); conn.close()
             return resp(401, {'error': 'Неверный логин или пароль'})
+        login_ok(cur, conn, key)
+        cur.close(); conn.close()
         token = make_client_token(client['id'], client['login'])
         return resp(200, {'token': token, 'client_id': client['id'], 'name': client['name']})
 

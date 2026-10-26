@@ -11,7 +11,7 @@ from urllib.parse import urlencode
 
 SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 't_p34673685_special_systems_proj')
 ADMIN_LOGIN = 'Pioneer78'
-SECRET_KEY = 'specsystems_admin_secret_2026'
+SECRET_KEY = os.environ['ADMIN_TOKEN_SECRET']
 TIMEZONE = 'Europe/Moscow'
 
 AUTH_BASE_URL = 'https://accounts.google.com/o/oauth2/v2/auth'

@@ -10,7 +10,7 @@ import requests
 
 SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 't_p34673685_special_systems_proj')
 ADMIN_LOGIN = 'Pioneer78'
-SECRET_KEY = 'specsystems_admin_secret_2026'
+SECRET_KEY = os.environ['ADMIN_TOKEN_SECRET']
 
 TOKEN_URL = 'https://oauth2.googleapis.com/token'
 USERINFO_URL = 'https://www.googleapis.com/oauth2/v2/userinfo'
