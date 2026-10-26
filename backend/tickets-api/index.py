@@ -393,8 +393,8 @@ def handler(event: dict, context) -> dict:
                 if qs.get('client_id'):
                     where_parts.append(f"t.client_id = {int(qs['client_id'])}")
                 if qs.get('problem_type'):
-                    pt = qs['problem_type'].replace("'", "''")
-                    where_parts.append(f"t.problem_type = '{pt}'")
+                    pt_quoted = cur.mogrify("%s", (qs['problem_type'],)).decode()
+                    where_parts.append(f"t.problem_type = {pt_quoted}")
                 if qs.get('assignee_id'):
                     where_parts.append(f"t.assignee_id = {int(qs['assignee_id'])}")
 
