@@ -418,7 +418,9 @@ def handler(event: dict, context) -> dict:
                       AND m.id > COALESCE((SELECT r.last_read_message_id FROM {SCHEMA}.ticket_client_reads r
                                            WHERE r.ticket_id = t.id AND r.client_id = {int(client_id_from_token)}), 0)) AS unread_count,
                     (SELECT COALESCE(NULLIF(lm.message, ''), 'Файл: ' || COALESCE(lm.file_name, '')) FROM {SCHEMA}.ticket_messages lm
-                     WHERE lm.ticket_id = t.id AND lm.sender_type = 'staff' ORDER BY lm.id DESC LIMIT 1) AS last_message"""
+                     WHERE lm.ticket_id = t.id AND lm.sender_type = 'staff' ORDER BY lm.id DESC LIMIT 1) AS last_message,
+                    (SELECT lm.created_at FROM {SCHEMA}.ticket_messages lm
+                     WHERE lm.ticket_id = t.id AND lm.sender_type = 'staff' ORDER BY lm.id DESC LIMIT 1) AS last_message_at"""
             else:
                 unread_sql = "0 AS unread_count"
             cur.execute(f"""

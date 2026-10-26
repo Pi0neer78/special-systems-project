@@ -60,6 +60,7 @@ type Ticket = {
   assignee_name: string | null;
   unread_count?: number;
   last_message?: string | null;
+  last_message_at?: string | null;
 };
 
 type DbType = 'file' | 'server' | 'http';
@@ -322,7 +323,7 @@ function TicketsPanel({ token, onNewClick, refreshSignal, onUnreadChange }: { to
                   <p className="text-xs text-muted-foreground mt-0.5">{t.problem_type}</p>
                   {t.last_message && (
                     <p className={`text-xs mt-1 line-clamp-1 ${t.unread_count ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
-                      <Icon name="MessageCircle" size={11} className="inline mr-1 -mt-0.5" />Вам сообщение: {t.last_message}
+                      <Icon name="MessageCircle" size={11} className="inline mr-1 -mt-0.5" />Вам сообщение{t.last_message_at ? ` (${new Date(t.last_message_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })})` : ''}: {t.last_message}
                     </p>
                   )}
                 </div>
