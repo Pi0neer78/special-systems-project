@@ -99,7 +99,7 @@ TASK_SELECT = f"""
     SELECT t.id, t.title, t.description, t.status, t.color,
            t.due_date, t.due_time, t.all_day, t.repeat_rule, t.repeat_until,
            t.author_id, t.assignee_id, t.created_at, t.updated_at,
-           t.is_archived, t.archived_at, t.is_birthday,
+           t.is_archived, t.archived_at, t.is_birthday, t.duration_minutes,
            au_a.full_name AS author_name, au_a.login AS author_login,
            au_s.full_name AS assignee_name, au_s.login AS assignee_login
     FROM {SCHEMA}.tasks t

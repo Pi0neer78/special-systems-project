@@ -2447,6 +2447,7 @@ type Task = {
   is_archived?: boolean;
   archived_at?: string | null;
   is_birthday?: boolean;
+  duration_minutes?: number | null;
 };
 
 type TaskMeta = { users: TaskUser[]; statuses: string[]; colors: string[]; repeat_rules: string[] };
@@ -3019,6 +3020,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
                       <button className="text-left font-medium truncate hover:text-primary transition-colors flex items-center gap-1" onClick={() => setDetailModal(t)}>
                         {t.is_birthday && <span title="День рождения">🎂</span>}
                         <span className="truncate">{t.title}</span>
+                        {t.duration_minutes ? <span className="text-[10px] font-normal text-muted-foreground border border-border rounded px-1 ml-1 whitespace-nowrap">{t.duration_minutes} мин</span> : null}
                       </button>
                     </td>
                     <td className={`px-3 py-2.5 text-xs whitespace-nowrap ${overdue ? 'text-red-400 font-bold' : 'text-muted-foreground'}`}>
@@ -3078,6 +3080,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
                   <button className="text-left font-medium text-sm break-words hover:text-primary transition-colors" onClick={() => setDetailModal(t)}>
                     {t.is_birthday && <span className="mr-1" title="День рождения">🎂</span>}
                     {t.title}
+                    {t.duration_minutes ? <span className="text-[10px] font-normal text-muted-foreground border border-border rounded px-1 ml-1 whitespace-nowrap">{t.duration_minutes} мин</span> : null}
                   </button>
                   <div className="flex gap-0.5 shrink-0">
                     <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" onClick={() => openEdit(t)} title="Редактировать">
@@ -3149,6 +3152,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
                           <button className="text-left font-medium text-sm break-words hover:text-primary transition-colors" onClick={() => setDetailModal(t)}>
                             {t.is_birthday && <span className="mr-1" title="День рождения">🎂</span>}
                             {t.title}
+                            {t.duration_minutes ? <span className="text-[10px] font-normal text-muted-foreground border border-border rounded px-1 ml-1 whitespace-nowrap">{t.duration_minutes} мин</span> : null}
                           </button>
                           <div className="flex gap-0.5 shrink-0">
                             <button className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-black/10 transition-colors" onClick={() => openEdit(t)} title="Редактировать">
@@ -3337,6 +3341,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div><span className="text-muted-foreground">Срок:</span> {t.due_date ? new Date(t.due_date).toLocaleDateString('ru') : '—'}{!t.all_day && t.due_time ? ` ${t.due_time.slice(0, 5)}` : ''}{t.all_day && t.due_date ? ' (весь день)' : ''}</div>
                   <div><span className="text-muted-foreground">Повтор:</span> {REPEAT_LABELS[t.repeat_rule]}</div>
+                  {t.duration_minutes ? <div><span className="text-muted-foreground">Длительность:</span> {t.duration_minutes} мин</div> : null}
                   <div><span className="text-muted-foreground">Ответственный:</span> {t.assignee_name || t.assignee_login || '—'}</div>
                   <div><span className="text-muted-foreground">Автор:</span> {t.author_name || t.author_login || '—'}</div>
                   <div><span className="text-muted-foreground">Создана:</span> {new Date(t.created_at).toLocaleString('ru')}</div>

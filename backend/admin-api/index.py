@@ -91,7 +91,7 @@ def fetch_rs_releases() -> dict:
 
 
 PW_SELECT = f"""
-    SELECT pw.id, pw.start_date, pw.end_date, pw.client_id, c.name AS client_name, pw.work_type_id, wt.name AS work_type_name,
+    SELECT pw.id, pw.start_date, pw.end_date, pw.client_id, c.name AS client_name, pw.work_type_id, wt.name AS work_type_name, wt.duration_minutes AS work_type_duration,
            pw.description, pw.period_type, pw.weekdays, pw.month_days, pw.run_time, pw.is_active,
            COALESCE((SELECT array_agg(a.user_id ORDER BY a.user_id) FROM {SCHEMA}.planned_work_assignees a WHERE a.planned_work_id = pw.id), '{{}}') AS assignee_ids
     FROM {SCHEMA}.planned_works pw
@@ -147,14 +147,14 @@ def sync_planned_work(cur, pid):
             cur.execute(f"DELETE FROM {SCHEMA}.tasks WHERE id=%s", (t['id'],))
     for key, tid in have.items():
         cur.execute(f"""
-            UPDATE {SCHEMA}.tasks SET title=%s, description=%s, due_time=%s, all_day=%s, color='purple', updated_at=NOW()
+            UPDATE {SCHEMA}.tasks SET title=%s, description=%s, due_time=%s, all_day=%s, color='purple', duration_minutes=%s, updated_at=NOW()
             WHERE id=%s
-        """, (title, pw['description'], pw['run_time'], all_day, tid))
+        """, (title, pw['description'], pw['run_time'], all_day, pw['work_type_duration'], tid))
     for key in sorted(wanted - set(have.keys())):
         cur.execute(f"""
-            INSERT INTO {SCHEMA}.tasks (title, description, status, color, due_date, due_time, all_day, repeat_rule, assignee_id, planned_work_id)
-            VALUES (%s,%s,'new','purple',%s,%s,%s,'none',%s,%s)
-        """, (title, pw['description'], key[0], pw['run_time'], all_day, key[1], pid))
+            INSERT INTO {SCHEMA}.tasks (title, description, status, color, due_date, due_time, all_day, repeat_rule, assignee_id, planned_work_id, duration_minutes)
+            VALUES (%s,%s,'new','purple',%s,%s,%s,'none',%s,%s,%s)
+        """, (title, pw['description'], key[0], pw['run_time'], all_day, key[1], pid, pw['work_type_duration']))
 
 
 def pw_params(body):

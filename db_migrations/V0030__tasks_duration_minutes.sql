@@ -1,0 +1,1 @@
+ALTER TABLE t_p34673685_special_systems_proj.tasks ADD COLUMN duration_minutes INTEGER NULL;
