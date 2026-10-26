@@ -61,8 +61,39 @@ def decode_token(token: str, conn) -> dict:
     return None
 
 
+PBKDF2_ITER = 200000
+
+
 def hash_password(pwd: str) -> str:
-    return hashlib.sha256(pwd.encode()).hexdigest()
+    salt = os.urandom(16).hex()
+    dk = hashlib.pbkdf2_hmac('sha256', pwd.encode(), bytes.fromhex(salt), PBKDF2_ITER).hex()
+    return f"pbkdf2${PBKDF2_ITER}${salt}${dk}"
+
+
+def check_password(pwd: str, stored: str) -> bool:
+    if not stored:
+        return False
+    if stored.startswith('pbkdf2$'):
+        _, it, salt, dk = stored.split('$')
+        calc = hashlib.pbkdf2_hmac('sha256', pwd.encode(), bytes.fromhex(salt), int(it)).hex()
+        return hmac.compare_digest(calc, dk)
+    return hmac.compare_digest(hashlib.sha256(pwd.encode()).hexdigest(), stored)
+
+
+def needs_rehash(stored: str) -> bool:
+    return not (stored or '').startswith('pbkdf2$')
+
+
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', '').split(',') if o.strip()]
+
+
+def apply_cors(event):
+    """Разрешает запросы только с сайтов из ALLOWED_ORIGINS (если список задан)."""
+    if not ALLOWED_ORIGINS:
+        return
+    origin = ((event.get('headers') or {}).get('Origin') or (event.get('headers') or {}).get('origin') or '')
+    CORS['Access-Control-Allow-Origin'] = origin if origin in ALLOWED_ORIGINS else ALLOWED_ORIGINS[0]
+    CORS['Vary'] = 'Origin'
 
 
 def get_conn():
@@ -169,6 +200,7 @@ def handler(event: dict, context) -> dict:
     """CRUD API для административной панели: пользователи, клиенты, базы данных, привязки.
     Маршрутинг через query-параметры: ?resource=users|clients|databases|user_clients&id=N&sub=db&subid=M
     """
+    apply_cors(event)
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
 

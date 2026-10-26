@@ -129,10 +129,24 @@ def make_item(section, kind, title, subtitle, hit, nav):
     }
 
 
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', '').split(',') if o.strip()]
+
+
+def apply_cors(event):
+    """Разрешает запросы только с сайтов из ALLOWED_ORIGINS (если список задан)."""
+    if not ALLOWED_ORIGINS:
+        return
+    h = event.get('headers') or {}
+    origin = h.get('Origin') or h.get('origin') or ''
+    CORS['Access-Control-Allow-Origin'] = origin if origin in ALLOWED_ORIGINS else ALLOWED_ORIGINS[0]
+    CORS['Vary'] = 'Origin'
+
+
 def handler(event: dict, context) -> dict:
     """API панели работы: учётные данные, обновления, история.
     resource=folders|credentials|updates|history
     """
+    apply_cors(event)
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
 

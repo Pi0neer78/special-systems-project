@@ -167,6 +167,41 @@ def client_ip(event) -> str:
     return str(((event.get('requestContext') or {}).get('identity') or {}).get('sourceIp') or '')[:64]
 
 
+PBKDF2_ITER = 200000
+
+
+def hash_password(pwd: str) -> str:
+    salt = os.urandom(16).hex()
+    dk = hashlib.pbkdf2_hmac('sha256', pwd.encode(), bytes.fromhex(salt), PBKDF2_ITER).hex()
+    return f"pbkdf2${PBKDF2_ITER}${salt}${dk}"
+
+
+def check_password(pwd: str, stored: str) -> bool:
+    if not stored:
+        return False
+    if stored.startswith('pbkdf2$'):
+        _, it, salt, dk = stored.split('$')
+        calc = hashlib.pbkdf2_hmac('sha256', pwd.encode(), bytes.fromhex(salt), int(it)).hex()
+        return hmac.compare_digest(calc, dk)
+    return hmac.compare_digest(hashlib.sha256(pwd.encode()).hexdigest(), stored)
+
+
+def needs_rehash(stored: str) -> bool:
+    return not (stored or '').startswith('pbkdf2$')
+
+
+ALLOWED_ORIGINS = [o.strip() for o in os.environ.get('ALLOWED_ORIGINS', '').split(',') if o.strip()]
+
+
+def apply_cors(event):
+    """Разрешает запросы только с сайтов из ALLOWED_ORIGINS (если список задан)."""
+    if not ALLOWED_ORIGINS:
+        return
+    origin = ((event.get('headers') or {}).get('Origin') or (event.get('headers') or {}).get('origin') or '')
+    CORS['Access-Control-Allow-Origin'] = origin if origin in ALLOWED_ORIGINS else ALLOWED_ORIGINS[0]
+    CORS['Vary'] = 'Origin'
+
+
 def resp(status, body):
     return {'statusCode': status, 'headers': CORS, 'body': json.dumps(body, ensure_ascii=False, default=str)}
 
@@ -198,6 +233,7 @@ def handler(event: dict, context) -> dict:
       POST   ?resource=ticket-messages               — отправить сообщение/файл в переписку
       GET    ?resource=client-messages               — последние сообщения от клиентов (для уведомлений сотрудников)
     """
+    apply_cors(event)
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
 
@@ -233,12 +269,16 @@ def handler(event: dict, context) -> dict:
             token = make_admin_token(ADMIN_LOGIN_HARDCODED, 'admin', 0)
             return resp(200, {'token': token, 'user_id': 0, 'login': ADMIN_LOGIN_HARDCODED, 'full_name': 'Администратор', 'role': 'admin'})
 
-        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
         cur.execute(
-            f"SELECT id, login, full_name FROM {SCHEMA}.admin_users WHERE login=%s AND password_hash=%s AND is_active=TRUE",
-            (login, pwd_hash)
+            f"SELECT id, login, full_name, password_hash FROM {SCHEMA}.admin_users WHERE login=%s AND is_active=TRUE",
+            (login,)
         )
         user = cur.fetchone()
+        if user and not check_password(password, user['password_hash']):
+            user = None
+        elif user and needs_rehash(user['password_hash']):
+            cur.execute(f"UPDATE {SCHEMA}.admin_users SET password_hash=%s WHERE id=%s", (hash_password(password), user['id']))
+            conn.commit()
         if not user:
             login_fail(cur, conn, key, ip)
             cur.close(); conn.close()
@@ -285,17 +325,21 @@ def handler(event: dict, context) -> dict:
             return resp(400, {'error': 'Укажите логин и пароль'})
         ip = client_ip(event)
         key = 'client:' + login.lower()[:100]
-        pwd_hash = hashlib.sha256(password.encode()).hexdigest()
         conn = get_conn()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         if login_locked(cur, key, ip):
             cur.close(); conn.close()
             return resp(429, {'error': 'Слишком много неудачных попыток. Попробуйте через 15 минут.'})
         cur.execute(
-            f"SELECT id, login, name FROM {SCHEMA}.clients WHERE login=%s AND password_hash=%s AND is_active=TRUE",
-            (login, pwd_hash)
+            f"SELECT id, login, name, password_hash FROM {SCHEMA}.clients WHERE login=%s AND is_active=TRUE",
+            (login,)
         )
         client = cur.fetchone()
+        if client and not check_password(password, client['password_hash']):
+            client = None
+        elif client and needs_rehash(client['password_hash']):
+            cur.execute(f"UPDATE {SCHEMA}.clients SET password_hash=%s WHERE id=%s", (hash_password(password), client['id']))
+            conn.commit()
         if not client:
             login_fail(cur, conn, key, ip)
             cur.close(); conn.close()
