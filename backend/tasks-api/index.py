@@ -229,8 +229,14 @@ def handler(event: dict, context) -> dict:
                     where_sql = f"WHERE {' AND '.join(where)}" if where else ''
 
                     if qs.get('count_only') == '1':
-                        cur.execute(f"SELECT COUNT(*) AS cnt FROM {SCHEMA}.tasks t {where_sql}", params)
-                        return ok({'count': cur.fetchone()['cnt']})
+                        cur.execute(f"""
+                            SELECT COUNT(*) AS cnt,
+                                   COUNT(*) FILTER (WHERE t.status NOT IN ('done','cancelled') AND t.due_date IS NOT NULL
+                                       AND (t.due_date + COALESCE(t.due_time, TIME '23:59:59')) < (NOW() AT TIME ZONE 'Europe/Moscow')) AS overdue
+                            FROM {SCHEMA}.tasks t {where_sql}
+                        """, params)
+                        row = cur.fetchone()
+                        return ok({'count': row['cnt'], 'overdue': row['overdue']})
 
                     query = f"{TASK_SELECT} {where_sql} ORDER BY {sort_col} {order} NULLS LAST, t.id DESC"
                     cur.execute(query, params)

@@ -2482,6 +2482,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [filterAssignee, setFilterAssignee] = useState('');
   const [filterPlanned, setFilterPlanned] = useState(false);
   const [plannedCount, setPlannedCount] = useState(0);
+  const [plannedOverdue, setPlannedOverdue] = useState(0);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('due_date');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
@@ -2544,6 +2545,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
     const cp = new URLSearchParams({ resource: 'tasks', planned: '1', status: 'new,in_progress', count_only: '1' });
     const cd = await fetch(`${TASKS_URL}?${cp}`, { headers: apiHeaders }).then(r => r.json()).catch(() => null);
     if (cd && typeof cd.count === 'number') setPlannedCount(cd.count);
+    if (cd && typeof cd.overdue === 'number') setPlannedOverdue(cd.overdue);
   };
 
   const loadMeta = async () => {
@@ -2855,6 +2857,9 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
           <Icon name="CalendarClock" size={14} /> Плановые задачи
           {plannedCount > 0 && (
             <span className={`px-1.5 rounded-full text-[10px] font-semibold leading-4 ${filterPlanned ? 'bg-primary-foreground text-primary' : 'bg-primary text-primary-foreground'}`}>{plannedCount}</span>
+          )}
+          {plannedOverdue > 0 && (
+            <span className="px-1.5 rounded-full bg-red-500 text-white text-[10px] font-semibold leading-4" title="Просрочено">{plannedOverdue}</span>
           )}
         </button>
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по названию..."
