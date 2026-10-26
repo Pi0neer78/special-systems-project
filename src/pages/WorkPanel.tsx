@@ -2481,6 +2481,7 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
   const [filterStatuses, setFilterStatuses] = useState<Set<string>>(new Set());
   const [filterAssignee, setFilterAssignee] = useState('');
   const [filterPlanned, setFilterPlanned] = useState(false);
+  const [plannedCount, setPlannedCount] = useState(0);
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState('due_date');
   const [order, setOrder] = useState<'asc' | 'desc'>('asc');
@@ -2540,6 +2541,9 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
     const data = await fetch(`${TASKS_URL}?${params}`, { headers: apiHeaders }).then(r => r.json());
     setLoading(false);
     if (Array.isArray(data)) setTasks(data);
+    const cp = new URLSearchParams({ resource: 'tasks', planned: '1', status: 'new,in_progress', count_only: '1' });
+    const cd = await fetch(`${TASKS_URL}?${cp}`, { headers: apiHeaders }).then(r => r.json()).catch(() => null);
+    if (cd && typeof cd.count === 'number') setPlannedCount(cd.count);
   };
 
   const loadMeta = async () => {
@@ -2849,6 +2853,9 @@ function TasksSection({ token, isAdmin }: { token: string; isAdmin: boolean }) {
         <button type="button" onClick={() => setFilterPlanned(v => !v)}
           className={`h-8 px-3 rounded-md border text-xs font-medium flex items-center gap-1.5 transition-colors ${filterPlanned ? 'bg-primary text-primary-foreground border-primary' : 'border-border bg-secondary/40 text-muted-foreground hover:text-foreground'}`}>
           <Icon name="CalendarClock" size={14} /> Плановые задачи
+          {plannedCount > 0 && (
+            <span className={`px-1.5 rounded-full text-[10px] font-semibold leading-4 ${filterPlanned ? 'bg-primary-foreground text-primary' : 'bg-primary text-primary-foreground'}`}>{plannedCount}</span>
+          )}
         </button>
         <Input value={search} onChange={e => setSearch(e.target.value)} placeholder="Поиск по названию..."
           className="h-8 w-48 text-xs bg-secondary/40 border-border" />
