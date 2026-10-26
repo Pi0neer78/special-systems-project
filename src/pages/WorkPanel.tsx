@@ -4528,11 +4528,10 @@ export default function WorkPanel() {
                 )}
               </div>
             )}
-            {!isAdminRole && (
-              <button onClick={() => setSearchOpen(true)} className="text-muted-foreground hover:text-foreground transition-colors p-1.5" title="Глобальный поиск">
-                <Icon name="Search" size={16} />
-              </button>
-            )}
+            <button onClick={() => setSearchOpen(true)} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm text-muted-foreground hover:text-foreground hover:bg-secondary transition-all" title="Глобальный поиск">
+              <Icon name="Search" size={16} />
+              <span className="hidden lg:inline">Поиск</span>
+            </button>
             <div className="ml-2 flex items-center gap-2 text-xs text-muted-foreground">
               <Icon name="User" size={13} />
               <span className="hidden sm:inline">{authInfo.full_name || authInfo.login}</span>
