@@ -241,7 +241,7 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [preview, setPreview] = useState<CredFile | null>(null);
+  const [preview, setPreview] = useState<number | null>(null);
   const [sort, setSort] = useState<FileSort>('none');
   const [editing, setEditing] = useState<{ id: number; field: 'file_name' | 'description'; value: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -265,6 +265,22 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
   };
 
   const sorted = sortFiles(files, sort);
+  const images = sorted.filter(f => isImageFile(f.file_name));
+  const previewIdx = images.findIndex(f => f.id === preview);
+  const previewFile = previewIdx >= 0 ? images[previewIdx] : null;
+  const stepPreview = (d: number) => {
+    if (images.length < 2 || previewIdx < 0) return;
+    setPreview(images[(previewIdx + d + images.length) % images.length].id);
+  };
+  useEffect(() => {
+    if (preview === null) return;
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') stepPreview(-1);
+      if (e.key === 'ArrowRight') stepPreview(1);
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  });
 
   const load = () => {
     setLoading(true);
@@ -329,7 +345,15 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
         <p className="text-xs text-muted-foreground py-1">Файлов пока нет</p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-fixed">
+            <colgroup>
+              <col style={{ width: 32 }} />
+              <col style={{ width: 200 }} />
+              <col style={{ width: 125 }} />
+              <col style={{ width: 70 }} />
+              <col />
+              <col style={{ width: 80 }} />
+            </colgroup>
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
                 <th className="py-0.5 px-2 w-8"></th>
@@ -348,12 +372,12 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
                   <tr key={f.id} className="group border-b border-border/40 hover:bg-secondary/30 align-middle">
                     <td className="py-0.5 px-2">
                       {isImageFile(f.file_name) ? (
-                        <button onClick={() => setPreview(f)} title="Просмотр" className="hover:scale-110 transition-transform">
+                        <button onClick={() => setPreview(f.id)} title="Просмотр" className="hover:scale-110 transition-transform">
                           <Icon name={ic.icon} size={16} className={ic.color} />
                         </button>
                       ) : <Icon name={ic.icon} size={16} className={ic.color} />}
                     </td>
-                    <td className="py-0.5 px-2 min-w-[160px]">
+                    <td className="py-0.5 px-2">
                       {isEd('file_name') ? (
                         <input autoFocus value={editing!.value} onChange={e => setEditing({ ...editing!, value: e.target.value })}
                           onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null); }}
@@ -364,7 +388,7 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
                     </td>
                     <td className="py-0.5 px-2 text-xs text-muted-foreground whitespace-nowrap">{new Date(f.created_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
                     <td className="py-0.5 px-2 text-xs text-muted-foreground whitespace-nowrap text-right">{formatFileSize(f.file_size)}</td>
-                    <td className="py-0.5 px-2 min-w-[160px]">
+                    <td className="py-0.5 px-2">
                       {isEd('description') ? (
                         <textarea autoFocus rows={2} value={editing!.value} onChange={e => setEditing({ ...editing!, value: e.target.value })}
                           onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); } if (e.key === 'Escape') setEditing(null); }}
@@ -400,10 +424,31 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
           </table>
         </div>
       )}
-      <Dialog open={!!preview} onOpenChange={o => { if (!o) setPreview(null); }}>
+      <Dialog open={!!previewFile} onOpenChange={o => { if (!o) setPreview(null); }}>
         <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col gap-3">
-          <DialogHeader><DialogTitle className="text-sm break-all pr-6">{preview?.file_name}</DialogTitle></DialogHeader>
-          {preview && <img src={preview.file_url} alt={preview.file_name} className="max-w-full max-h-[75vh] object-contain mx-auto rounded" />}
+          <DialogHeader>
+            <DialogTitle className="text-sm break-all pr-6">
+              {previewFile?.file_name} <span className="text-muted-foreground font-normal">({previewIdx + 1} из {images.length})</span>
+            </DialogTitle>
+          </DialogHeader>
+          {previewFile && (
+            <div className="relative flex items-center justify-center">
+              <img src={previewFile.file_url} alt={previewFile.file_name} className="max-w-full max-h-[75vh] object-contain rounded" />
+              {images.length > 1 && (
+                <>
+                  <button onClick={() => stepPreview(-1)} title="Предыдущая"
+                    className="absolute left-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-background/80 border border-border hover:bg-background">
+                    <Icon name="ChevronLeft" size={20} />
+                  </button>
+                  <button onClick={() => stepPreview(1)} title="Следующая"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-background/80 border border-border hover:bg-background">
+                    <Icon name="ChevronRight" size={20} />
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          {previewFile?.description && <p className="text-xs text-muted-foreground whitespace-pre-wrap">{previewFile.description}</p>}
         </DialogContent>
       </Dialog>
     </div>
@@ -905,7 +950,7 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
             {/* Форма */}
             <div className="flex-1 overflow-y-auto p-5">
               {viewingFiles && filesContainer ? (
-                <div className="max-w-[43.2rem]">
+                <div className="max-w-[47.5rem]">
                   <CredFilesBlock credentialId={filesContainer.id} onCountChange={setFilesCount} />
                 </div>
               ) : (selectedCred || dirty) ? (
