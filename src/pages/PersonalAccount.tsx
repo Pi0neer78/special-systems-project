@@ -202,7 +202,7 @@ const STATUS_FILTERS = [
   { value: 'cancelled', label: 'Отменённые' },
 ];
 
-function TicketsPanel({ token, onNewClick, refreshSignal }: { token: string; onNewClick: () => void; refreshSignal: number }) {
+function TicketsPanel({ token, onNewClick, refreshSignal, onUnreadChange }: { token: string; onNewClick: () => void; refreshSignal: number; onUnreadChange?: (n: number) => void }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState('');
@@ -253,6 +253,7 @@ function TicketsPanel({ token, onNewClick, refreshSignal }: { token: string; onN
 
   const closeDetail = () => { setDetailTicket(null); load(true); };
   const totalUnread = tickets.reduce((n, t) => n + (t.unread_count || 0), 0);
+  useEffect(() => { onUnreadChange?.(totalUnread); }, [totalUnread, onUnreadChange]);
 
   const filtered = filterStatus ? tickets.filter(t => t.status === filterStatus) : tickets;
 
@@ -467,6 +468,7 @@ export default function PersonalAccount() {
   const [token, setToken] = useState('');
   const [showNew, setShowNew] = useState(false);
   const [ticketsRefresh, setTicketsRefresh] = useState(0);
+  const [unreadTotal, setUnreadTotal] = useState(0);
   const navigate = useNavigate();
 
   // Сплит-панель
@@ -544,6 +546,11 @@ export default function PersonalAccount() {
             </span>
           </div>
           <div className="flex items-center gap-3">
+            {unreadTotal > 0 && (
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500 text-white text-xs font-semibold" title="Непрочитанные сообщения">
+                <Icon name="MessageCircle" size={12} /> {unreadTotal}
+              </div>
+            )}
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Icon name="User" size={14} />
               <span className="hidden sm:inline">{clientInfo.name}</span>
@@ -560,7 +567,7 @@ export default function PersonalAccount() {
       <div ref={containerRef} className="flex flex-1 overflow-hidden" style={{ height: 'calc(100vh - 56px)' }}>
         {/* Левая панель — заявки */}
         <div className="flex flex-col overflow-hidden border-r border-border" style={{ width: `${splitWidth}%` }}>
-          <TicketsPanel token={token} onNewClick={() => setShowNew(true)} refreshSignal={ticketsRefresh} />
+          <TicketsPanel token={token} onNewClick={() => setShowNew(true)} refreshSignal={ticketsRefresh} onUnreadChange={setUnreadTotal} />
         </div>
 
         {/* Разделитель */}
