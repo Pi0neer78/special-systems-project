@@ -1663,7 +1663,9 @@ export function PlannedWorksSection() {
     load();
     api('resource=clients').then(d => { if (Array.isArray(d)) setClients(d.map((c: { id: number; name: string }) => ({ id: c.id, name: c.name }))); });
     api('resource=work_types').then(d => { if (Array.isArray(d)) setWorkTypes(d); });
-    api('resource=users').then(d => { if (Array.isArray(d)) setUsers(d.filter((u: { is_active: boolean }) => u.is_active)); });
+    api('resource=users').then(d => {
+      if (Array.isArray(d)) setUsers([{ id: 0, login: 'Pioneer78', full_name: 'Администратор' }, ...d.filter((u: { is_active: boolean }) => u.is_active)]);
+    });
   }, [load]);
 
   const openAdd = () => { setForm(EMPTY_PW_FORM); setModal({ open: true }); };
