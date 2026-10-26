@@ -251,6 +251,23 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
     try { return JSON.parse(localStorage.getItem('cred_files_cols') || '{}'); } catch { return {}; }
   });
   const tableRef = useRef<HTMLTableElement>(null);
+  const [blockW, setBlockW] = useState<number>(() => Number(localStorage.getItem('cred_files_width')) || 832);
+  const startBlockResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const box = (e.currentTarget as HTMLElement).parentElement as HTMLElement;
+    const startX = e.clientX;
+    const startW = box.getBoundingClientRect().width;
+    const move = (ev: MouseEvent) => setBlockW(Math.max(420, Math.round(startW + ev.clientX - startX)));
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      document.body.style.cursor = '';
+      setBlockW(w => { localStorage.setItem('cred_files_width', String(w)); return w; });
+    };
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
   const COL_DEFAULT: Record<string, number> = { name: 276, date: 125, size: 70 };
   const COL_INDEX: Record<string, number> = { name: 1, date: 2, size: 3, desc: 4 };
   const saveCols = (w: Record<string, number>) => { setColW(w); localStorage.setItem('cred_files_cols', JSON.stringify(w)); };
@@ -378,7 +395,9 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
   };
 
   return (
-    <div className="border border-border rounded-lg p-4 space-y-3">
+    <div className="relative border border-border rounded-lg p-4 space-y-3" style={{ width: blockW, maxWidth: 'none' }}>
+      <div onMouseDown={startBlockResize} title="Потяните, чтобы изменить ширину таблицы"
+        className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40 rounded-r-lg" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 flex-1 min-w-0 mr-3">
         <div className="text-xs font-mono text-primary uppercase tracking-widest">Файлы</div>
@@ -1027,7 +1046,7 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
             {/* Форма */}
             <div className="flex-1 overflow-y-auto p-5">
               {viewingFiles && filesContainer ? (
-                <div className="max-w-[52rem]">
+                <div>
                   <CredFilesBlock credentialId={filesContainer.id} onCountChange={setFilesCount} />
                 </div>
               ) : (selectedCred || dirty) ? (
