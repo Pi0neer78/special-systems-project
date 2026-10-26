@@ -71,7 +71,7 @@ interface Credential {
 }
 interface CredFile {
   id: number; credential_id: number; file_name: string; file_url: string;
-  file_size: number | null; content_type: string | null; created_at: string;
+  file_size: number | null; content_type: string | null; created_at: string; description?: string;
 }
 type DbType = 'file' | 'server' | 'http';
 const DB_TYPE_LABELS: Record<DbType, string> = { file: 'Файловая', server: 'Серверная', http: 'HTTP' };
@@ -191,14 +191,47 @@ function formatFileSize(bytes: number | null) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
 }
 
-function fileIconName(name: string) {
+function fileIconStyle(name: string): { icon: string; color: string } {
   const ext = name.split('.').pop()?.toLowerCase() || '';
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return 'Image';
-  if (['pdf'].includes(ext)) return 'FileText';
-  if (['doc', 'docx'].includes(ext)) return 'FileText';
-  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'FileSpreadsheet';
-  if (['zip', 'rar', '7z'].includes(ext)) return 'FileArchive';
-  return 'File';
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) return { icon: 'Image', color: 'text-purple-400' };
+  if (ext === 'pdf') return { icon: 'FileText', color: 'text-red-400' };
+  if (['doc', 'docx', 'rtf', 'odt'].includes(ext)) return { icon: 'FileText', color: 'text-blue-400' };
+  if (['xls', 'xlsx', 'csv', 'ods'].includes(ext)) return { icon: 'FileSpreadsheet', color: 'text-green-400' };
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) return { icon: 'FileArchive', color: 'text-yellow-400' };
+  if (['txt', 'log', 'md'].includes(ext)) return { icon: 'FileText', color: 'text-muted-foreground' };
+  if (['mp3', 'wav', 'ogg'].includes(ext)) return { icon: 'FileAudio', color: 'text-pink-400' };
+  if (['mp4', 'avi', 'mkv', 'mov'].includes(ext)) return { icon: 'FileVideo', color: 'text-pink-400' };
+  if (['exe', 'msi', 'bat', 'cmd'].includes(ext)) return { icon: 'AppWindow', color: 'text-orange-400' };
+  if (['json', 'xml', 'js', 'ts', 'py', 'sql', 'html', 'css', '1cd', 'dt', 'cf', 'cfe'].includes(ext)) return { icon: 'FileCode', color: 'text-cyan-400' };
+  return { icon: 'File', color: 'text-muted-foreground' };
+}
+
+type FileSort = 'none' | 'name_asc' | 'name_desc' | 'date_desc' | 'date_asc' | 'size_desc' | 'size_asc';
+const FILE_SORT_LABELS: Record<FileSort, string> = {
+  none: 'Без сортировки',
+  name_asc: 'Имя: А → Я',
+  name_desc: 'Имя: Я → А',
+  date_desc: 'Дата: новые сверху',
+  date_asc: 'Дата: старые сверху',
+  size_desc: 'Размер: большие сверху',
+  size_asc: 'Размер: малые сверху',
+};
+
+function sortFiles(files: CredFile[], sort: FileSort): CredFile[] {
+  if (sort === 'none') return files;
+  const arr = [...files];
+  const byName = (a: CredFile, b: CredFile) => a.file_name.localeCompare(b.file_name, 'ru', { numeric: true, sensitivity: 'base' });
+  const byDate = (a: CredFile, b: CredFile) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  const bySize = (a: CredFile, b: CredFile) => (a.file_size || 0) - (b.file_size || 0);
+  switch (sort) {
+    case 'name_asc': return arr.sort(byName);
+    case 'name_desc': return arr.sort((a, b) => byName(b, a));
+    case 'date_asc': return arr.sort(byDate);
+    case 'date_desc': return arr.sort((a, b) => byDate(b, a));
+    case 'size_asc': return arr.sort(bySize);
+    case 'size_desc': return arr.sort((a, b) => bySize(b, a));
+  }
+  return arr;
 }
 
 function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number; onCountChange?: (count: number) => void }) {
@@ -206,7 +239,29 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [sort, setSort] = useState<FileSort>('none');
+  const [editing, setEditing] = useState<{ id: number; field: 'file_name' | 'description'; value: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const patchFile = async (id: number, payload: object) => {
+    const r = await api(`resource=files&id=${id}`, 'PUT', payload);
+    if (r && r.id) setFiles(prev => prev.map(x => x.id === r.id ? { ...x, ...r } : x));
+    else toast.error('Не удалось сохранить');
+  };
+
+  const saveEdit = () => {
+    if (!editing) return;
+    const f = files.find(x => x.id === editing.id);
+    const value = editing.value.trim();
+    const field = editing.field;
+    setEditing(null);
+    if (!f) return;
+    if (field === 'file_name' && (!value || value === f.file_name)) return;
+    if (field === 'description' && value === (f.description || '')) return;
+    patchFile(f.id, { [field]: value });
+  };
+
+  const sorted = sortFiles(files, sort);
 
   const load = () => {
     setLoading(true);
@@ -252,9 +307,15 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
     <div className="border border-border rounded-lg p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="text-xs font-mono text-primary uppercase tracking-widest">Файлы</div>
+        <div className="flex items-center gap-2">
+        <select value={sort} onChange={e => setSort(e.target.value as FileSort)} title="Сортировка"
+          className="h-7 text-xs rounded-md border border-border bg-background text-foreground px-2">
+          {(Object.keys(FILE_SORT_LABELS) as FileSort[]).map(k => <option key={k} value={k}>{FILE_SORT_LABELS[k]}</option>)}
+        </select>
         <Button size="sm" variant="outline" disabled={uploading} className="h-7 border-dashed border-border text-muted-foreground hover:text-foreground" onClick={() => inputRef.current?.click()}>
           <Icon name={uploading ? 'Loader' : 'Upload'} size={13} className={`mr-1 ${uploading ? 'animate-spin' : ''}`} /> {uploading ? 'Загрузка...' : 'Добавить файл'}
         </Button>
+        </div>
         <input ref={inputRef} type="file" multiple className="hidden" onChange={onPick} />
       </div>
       {loading ? (
@@ -264,20 +325,70 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
       ) : files.length === 0 ? (
         <p className="text-xs text-muted-foreground py-1">Файлов пока нет</p>
       ) : (
-        <div className="space-y-1.5">
-          {files.map(f => (
-            <div key={f.id} className="flex items-center gap-2 group bg-secondary/30 rounded-md px-2.5 py-1.5">
-              <Icon name={fileIconName(f.file_name)} size={14} className="text-muted-foreground shrink-0" />
-              <a href={f.file_url} onClick={e => downloadFile(e, f.file_url, f.file_name)} className="text-sm truncate hover:text-primary transition-colors flex-1 min-w-0 cursor-pointer">
-                {f.file_name}
-              </a>
-              {f.file_size != null && <span className="text-xs text-muted-foreground shrink-0">{formatFileSize(f.file_size)}</span>}
-              <button onClick={() => doDelete(f.id)} disabled={deletingId === f.id} title="Удалить файл"
-                className="p-1 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                <Icon name={deletingId === f.id ? 'Loader' : 'Trash2'} size={13} className={deletingId === f.id ? 'animate-spin' : ''} />
-              </button>
-            </div>
-          ))}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border">
+                <th className="py-1.5 px-2 w-8"></th>
+                <th className="py-1.5 px-2 font-medium">Имя файла</th>
+                <th className="py-1.5 px-2 font-medium whitespace-nowrap">Дата</th>
+                <th className="py-1.5 px-2 font-medium whitespace-nowrap text-right">Размер</th>
+                <th className="py-1.5 px-2 font-medium">Описание</th>
+                <th className="py-1.5 px-2 w-20"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map(f => {
+                const ic = fileIconStyle(f.file_name);
+                const isEd = (field: 'file_name' | 'description') => editing?.id === f.id && editing.field === field;
+                return (
+                  <tr key={f.id} className="group border-b border-border/40 hover:bg-secondary/30 align-top">
+                    <td className="py-1.5 px-2"><Icon name={ic.icon} size={18} className={ic.color} /></td>
+                    <td className="py-1.5 px-2 min-w-[160px]">
+                      {isEd('file_name') ? (
+                        <input autoFocus value={editing!.value} onChange={e => setEditing({ ...editing!, value: e.target.value })}
+                          onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null); }}
+                          className="w-full h-7 text-sm rounded border border-primary bg-background px-2" />
+                      ) : (
+                        <a href={f.file_url} onClick={e => downloadFile(e, f.file_url, f.file_name)} className="break-all hover:text-primary transition-colors cursor-pointer">{f.file_name}</a>
+                      )}
+                    </td>
+                    <td className="py-1.5 px-2 text-xs text-muted-foreground whitespace-nowrap">{new Date(f.created_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                    <td className="py-1.5 px-2 text-xs text-muted-foreground whitespace-nowrap text-right">{formatFileSize(f.file_size)}</td>
+                    <td className="py-1.5 px-2 min-w-[160px]">
+                      {isEd('description') ? (
+                        <textarea autoFocus rows={2} value={editing!.value} onChange={e => setEditing({ ...editing!, value: e.target.value })}
+                          onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); saveEdit(); } if (e.key === 'Escape') setEditing(null); }}
+                          className="w-full text-xs rounded border border-primary bg-background px-2 py-1" placeholder="Описание файла" />
+                      ) : f.description ? (
+                        <span onClick={() => setEditing({ id: f.id, field: 'description', value: f.description || '' })} title="Редактировать описание"
+                          className="text-xs whitespace-pre-wrap cursor-text">{f.description}</span>
+                      ) : (
+                        <button onClick={() => setEditing({ id: f.id, field: 'description', value: '' })}
+                          className="text-xs text-muted-foreground/60 hover:text-primary transition-colors">+ Добавить описание</button>
+                      )}
+                    </td>
+                    <td className="py-1.5 px-2 whitespace-nowrap text-right">
+                      <button onClick={() => setEditing({ id: f.id, field: 'file_name', value: f.file_name })} title="Переименовать"
+                        className="p-1 rounded text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Icon name="Pencil" size={13} />
+                      </button>
+                      {!!f.description && (
+                        <button onClick={() => patchFile(f.id, { description: '' })} title="Удалить описание"
+                          className="p-1 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Icon name="Eraser" size={13} />
+                        </button>
+                      )}
+                      <button onClick={() => doDelete(f.id)} disabled={deletingId === f.id} title="Удалить файл"
+                        className="p-1 rounded text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Icon name={deletingId === f.id ? 'Loader' : 'Trash2'} size={13} className={deletingId === f.id ? 'animate-spin' : ''} />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       )}
     </div>

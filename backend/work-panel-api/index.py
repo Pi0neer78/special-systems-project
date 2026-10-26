@@ -375,7 +375,7 @@ def handler(event: dict, context) -> dict:
                 if not credential_id:
                     return err('credential_id required')
                 cur.execute(f"""
-                    SELECT id, credential_id, file_name, file_url, file_size, content_type, created_at
+                    SELECT id, credential_id, file_name, file_url, file_size, content_type, created_at, description
                     FROM {SCHEMA}.credential_files WHERE credential_id=%s ORDER BY created_at DESC
                 """, [credential_id])
                 return ok([dict(r) for r in cur.fetchall()])
@@ -396,10 +396,31 @@ def handler(event: dict, context) -> dict:
                 cur.execute(f"""
                     INSERT INTO {SCHEMA}.credential_files (credential_id, file_name, file_url, file_size, content_type)
                     VALUES (%s,%s,%s,%s,%s)
-                    RETURNING id, credential_id, file_name, file_url, file_size, content_type, created_at
+                    RETURNING id, credential_id, file_name, file_url, file_size, content_type, created_at, description
                 """, (credential_id, file_name, url, len(raw), content_type))
                 conn.commit()
                 return ok(dict(cur.fetchone()))
+            if method == 'PUT' and rid:
+                sets, vals = [], []
+                if 'file_name' in body:
+                    new_name = (body.get('file_name') or '').strip()
+                    if not new_name:
+                        return err('file_name empty')
+                    sets.append('file_name=%s'); vals.append(new_name)
+                if 'description' in body:
+                    sets.append('description=%s'); vals.append((body.get('description') or '').strip())
+                if not sets:
+                    return err('nothing to update')
+                vals.append(rid)
+                cur.execute(f"""
+                    UPDATE {SCHEMA}.credential_files SET {', '.join(sets)} WHERE id=%s
+                    RETURNING id, credential_id, file_name, file_url, file_size, content_type, created_at, description
+                """, vals)
+                row = cur.fetchone()
+                if not row:
+                    return err('Not found', 404)
+                conn.commit()
+                return ok(dict(row))
             if method == 'DELETE' and rid:
                 cur.execute(f"SELECT file_url FROM {SCHEMA}.credential_files WHERE id=%s", [rid])
                 row = cur.fetchone()

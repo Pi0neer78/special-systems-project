@@ -1,0 +1,1 @@
+ALTER TABLE t_p34673685_special_systems_proj.credential_files ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
