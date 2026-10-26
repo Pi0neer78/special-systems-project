@@ -264,7 +264,9 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
     patchFile(f.id, { [field]: value });
   };
 
-  const sorted = sortFiles(files, sort);
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const sorted = sortFiles(files, sort).filter(f => !q || f.file_name.toLowerCase().includes(q) || (f.description || '').toLowerCase().includes(q));
   const images = sorted.filter(f => isImageFile(f.file_name));
   const previewIdx = images.findIndex(f => f.id === preview);
   const previewFile = previewIdx >= 0 ? images[previewIdx] : null;
@@ -344,11 +346,23 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
       ) : files.length === 0 ? (
         <p className="text-xs text-muted-foreground py-1">Файлов пока нет</p>
       ) : (
+        <>
+        <div className="relative">
+          <Icon name="Search" size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+          <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск по имени и описанию"
+            className="w-full h-7 text-xs rounded-md border border-border bg-background pl-7 pr-7" />
+          {query && (
+            <button onClick={() => setQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <Icon name="X" size={12} />
+            </button>
+          )}
+        </div>
+        {sorted.length === 0 && <p className="text-xs text-muted-foreground py-1">Ничего не найдено</p>}
         <div className="overflow-x-auto">
           <table className="w-full text-sm table-fixed">
             <colgroup>
               <col style={{ width: 32 }} />
-              <col style={{ width: 240 }} />
+              <col style={{ width: 276 }} />
               <col style={{ width: 125 }} />
               <col style={{ width: 70 }} />
               <col />
@@ -423,6 +437,7 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
             </tbody>
           </table>
         </div>
+        </>
       )}
       <Dialog open={!!previewFile} onOpenChange={o => { if (!o) setPreview(null); }}>
         <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col gap-3">
@@ -957,7 +972,7 @@ function CredentialsSection({ isAdmin }: { isAdmin: boolean }) {
             {/* Форма */}
             <div className="flex-1 overflow-y-auto p-5">
               {viewingFiles && filesContainer ? (
-                <div className="max-w-[47.5rem]">
+                <div className="max-w-[52rem]">
                   <CredFilesBlock credentialId={filesContainer.id} onCountChange={setFilesCount} />
                 </div>
               ) : (selectedCred || dirty) ? (
