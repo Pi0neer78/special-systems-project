@@ -312,15 +312,14 @@ function TicketsPanel({ token, onNewClick, refreshSignal, onUnreadChange }: { to
               className={`px-4 py-3 border-b border-border/40 cursor-pointer transition-colors hover:bg-secondary/30 ${overdue ? 'bg-red-500/5' : ''}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap mb-1">
-                    <span className={`text-xs font-medium ${st.color} flex items-center gap-0.5`}>
-                      <Icon name={st.icon} size={11} /> {st.label}
-                    </span>
-                    <span className={`text-xs ${pr.color}`}>{pr.label}</span>
-                    {overdue && <span className="text-xs text-red-500 font-bold">Просрочена</span>}
+                  <div className="flex items-center gap-x-3 gap-y-0.5 flex-wrap mb-1 text-xs">
+                    <span className="text-muted-foreground">Статус: <span className={`font-medium ${st.color}`}>{st.label}</span></span>
+                    <span className="text-muted-foreground">Приоритет: <span className={`font-medium ${pr.color}`}>{pr.label}</span></span>
+                    {overdue && <span className="text-muted-foreground">Состояние: <span className="text-red-500 font-bold">Просрочена</span></span>}
                   </div>
+                  <p className="text-xs text-muted-foreground">Тип заявки: <span className="text-foreground">{t.problem_type}</span></p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Описание заявки:</p>
                   <p className={`text-xs line-clamp-2 ${overdue ? 'text-red-300 font-bold' : 'text-foreground'}`}>{t.description}</p>
-                  <p className="text-xs text-muted-foreground mt-0.5">{t.problem_type}</p>
                   {t.last_message && (
                     <p className={`text-xs mt-1 line-clamp-1 ${t.unread_count ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
                       <Icon name="MessageCircle" size={11} className="inline mr-1 -mt-0.5" />Вам сообщение{t.last_message_at ? ` (${new Date(t.last_message_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })})` : ''}: {t.last_message}
@@ -333,9 +332,9 @@ function TicketsPanel({ token, onNewClick, refreshSignal, onUnreadChange }: { to
                       <Icon name="MessageCircle" size={10} /> {t.unread_count}
                     </span>
                   )}
-                  <p className="text-xs text-muted-foreground">#{t.id}</p>
-                  <p className="text-xs text-muted-foreground">{new Date(t.submitted_at).toLocaleDateString('ru')}</p>
-                  {t.deadline && <p className={`text-xs ${overdue ? 'text-red-400 font-semibold' : 'text-muted-foreground'}`}>до {new Date(t.deadline).toLocaleDateString('ru')}</p>}
+                  <p className="text-xs text-muted-foreground">Заявка #{t.id}</p>
+                  <p className="text-xs text-muted-foreground">Подана: {new Date(t.submitted_at).toLocaleDateString('ru')}</p>
+                  {t.deadline && <p className={`text-xs ${overdue ? 'text-red-400 font-semibold' : 'text-muted-foreground'}`}>Решить до: {new Date(t.deadline).toLocaleDateString('ru')}</p>}
                 </div>
               </div>
             </div>
