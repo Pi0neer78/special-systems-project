@@ -59,6 +59,7 @@ type Ticket = {
   status_changed_at: string;
   assignee_name: string | null;
   unread_count?: number;
+  last_message?: string | null;
 };
 
 type DbType = 'file' | 'server' | 'http';
@@ -205,7 +206,8 @@ const STATUS_FILTERS = [
 function TicketsPanel({ token, onNewClick, refreshSignal, onUnreadChange }: { token: string; onNewClick: () => void; refreshSignal: number; onUnreadChange?: (n: number) => void }) {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filterStatus, setFilterStatus] = useState('');
+  const [filterStatuses, setFilterStatuses] = useState<string[]>(['new', 'in_progress']);
+  const toggleStatus = (v: string) => setFilterStatuses(cur => v === '' ? [] : cur.includes(v) ? cur.filter(x => x !== v) : [...cur, v]);
   const [detailTicket, setDetailTicket] = useState<Ticket | null>(null);
 
   const [toasts, setToasts] = useState<IncomingMessage[]>([]);
@@ -255,7 +257,7 @@ function TicketsPanel({ token, onNewClick, refreshSignal, onUnreadChange }: { to
   const totalUnread = tickets.reduce((n, t) => n + (t.unread_count || 0), 0);
   useEffect(() => { onUnreadChange?.(totalUnread); }, [totalUnread, onUnreadChange]);
 
-  const filtered = filterStatus ? tickets.filter(t => t.status === filterStatus) : tickets;
+  const filtered = filterStatuses.length ? tickets.filter(t => filterStatuses.includes(t.status)) : tickets;
 
   return (
     <div className="flex flex-col h-full">
@@ -276,9 +278,9 @@ function TicketsPanel({ token, onNewClick, refreshSignal, onUnreadChange }: { to
 
       <div className="flex gap-1 px-4 py-2 border-b border-border/40 shrink-0 flex-wrap">
         {STATUS_FILTERS.map(f => (
-          <button key={f.value} onClick={() => setFilterStatus(f.value)}
+          <button key={f.value} onClick={() => toggleStatus(f.value)}
             className={`px-2.5 py-1 rounded-md text-xs transition-colors ${
-              filterStatus === f.value
+              (f.value === '' ? filterStatuses.length === 0 : filterStatuses.includes(f.value))
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:text-foreground hover:bg-secondary'
             }`}>
@@ -318,6 +320,11 @@ function TicketsPanel({ token, onNewClick, refreshSignal, onUnreadChange }: { to
                   </div>
                   <p className={`text-xs line-clamp-2 ${overdue ? 'text-red-300 font-bold' : 'text-foreground'}`}>{t.description}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{t.problem_type}</p>
+                  {t.last_message && (
+                    <p className={`text-xs mt-1 line-clamp-1 ${t.unread_count ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
+                      <Icon name="MessageCircle" size={11} className="inline mr-1 -mt-0.5" />Вам сообщение: {t.last_message}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right shrink-0">
                   {!!t.unread_count && t.unread_count > 0 && (
