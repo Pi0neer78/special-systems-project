@@ -169,7 +169,9 @@ def apply_cors(event):
         return
     h = event.get('headers') or {}
     origin = h.get('Origin') or h.get('origin') or ''
-    CORS['Access-Control-Allow-Origin'] = origin if origin in ALLOWED_ORIGINS else ALLOWED_ORIGINS[0]
+    host = origin.split('://', 1)[-1].split(':')[0].lower()
+    platform_ok = origin.startswith('https://') and (host == 'poehali.dev' or host.endswith('.poehali.dev'))
+    CORS['Access-Control-Allow-Origin'] = origin if (origin in ALLOWED_ORIGINS or platform_ok) else ALLOWED_ORIGINS[0]
     CORS['Vary'] = 'Origin'
 
 
