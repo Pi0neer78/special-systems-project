@@ -348,7 +348,7 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
           <table className="w-full text-sm table-fixed">
             <colgroup>
               <col style={{ width: 32 }} />
-              <col style={{ width: 200 }} />
+              <col style={{ width: 240 }} />
               <col style={{ width: 125 }} />
               <col style={{ width: 70 }} />
               <col />
@@ -381,9 +381,9 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
                       {isEd('file_name') ? (
                         <input autoFocus value={editing!.value} onChange={e => setEditing({ ...editing!, value: e.target.value })}
                           onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null); }}
-                          className="w-full h-7 text-sm rounded border border-primary bg-background px-2" />
+                          className="w-full h-6 text-xs rounded border border-primary bg-background px-2" />
                       ) : (
-                        <a href={f.file_url} onClick={e => downloadFile(e, f.file_url, f.file_name)} className="break-all hover:text-primary transition-colors cursor-pointer">{f.file_name}</a>
+                        <a href={f.file_url} onClick={e => downloadFile(e, f.file_url, f.file_name)} className="text-xs break-all hover:text-primary transition-colors cursor-pointer">{f.file_name}</a>
                       )}
                     </td>
                     <td className="py-0.5 px-2 text-xs text-muted-foreground whitespace-nowrap">{new Date(f.created_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
@@ -446,6 +446,13 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
                   </button>
                 </>
               )}
+            </div>
+          )}
+          {previewFile && (
+            <div className="flex justify-end">
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={e => downloadFile(e as unknown as React.MouseEvent, previewFile.file_url, previewFile.file_name)}>
+                <Icon name="Download" size={13} /> Скачать
+              </Button>
             </div>
           )}
           {previewFile?.description && <p className="text-xs text-muted-foreground whitespace-pre-wrap">{previewFile.description}</p>}
