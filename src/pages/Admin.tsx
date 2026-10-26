@@ -1605,6 +1605,7 @@ export function WorkTypesSection() {
 
 type PlannedWork = {
   id: number; start_date: string; end_date: string; client_id: number | null; client_name: string | null;
+  work_type_id: number | null; work_type_name: string | null;
   description: string; period_type: 'weekdays' | 'daily' | 'month_days'; weekdays: number[]; month_days: number[];
   run_time: string | null; is_active: boolean; assignee_ids: number[];
 };
@@ -1612,7 +1613,7 @@ type PlannedWork = {
 const WEEKDAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 const EMPTY_PW_FORM = {
-  start_date: '', end_date: '', client_id: '', description: '',
+  start_date: '', end_date: '', client_id: '', work_type_id: '', description: '',
   period_type: 'weekdays' as PlannedWork['period_type'],
   weekdays: [] as number[], month_days: [] as number[], run_time: '',
   assignee_ids: [] as number[], is_active: true,
@@ -1638,6 +1639,7 @@ export function PlannedWorksSection() {
   const [items, setItems] = useState<PlannedWork[]>([]);
   const [clients, setClients] = useState<{ id: number; name: string }[]>([]);
   const [users, setUsers] = useState<{ id: number; login: string; full_name: string | null }[]>([]);
+  const [workTypes, setWorkTypes] = useState<WorkType[]>([]);
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState<{ open: boolean; item?: PlannedWork }>({ open: false });
   const [form, setForm] = useState(EMPTY_PW_FORM);
@@ -1660,6 +1662,7 @@ export function PlannedWorksSection() {
   useEffect(() => {
     load();
     api('resource=clients').then(d => { if (Array.isArray(d)) setClients(d.map((c: { id: number; name: string }) => ({ id: c.id, name: c.name }))); });
+    api('resource=work_types').then(d => { if (Array.isArray(d)) setWorkTypes(d); });
     api('resource=users').then(d => { if (Array.isArray(d)) setUsers(d.filter((u: { is_active: boolean }) => u.is_active)); });
   }, [load]);
 
@@ -1667,7 +1670,7 @@ export function PlannedWorksSection() {
 
   const openEdit = (w: PlannedWork) => {
     setForm({
-      start_date: w.start_date, end_date: w.end_date, client_id: w.client_id ? String(w.client_id) : '',
+      start_date: w.start_date, end_date: w.end_date, client_id: w.client_id ? String(w.client_id) : '', work_type_id: w.work_type_id ? String(w.work_type_id) : '',
       description: w.description || '', period_type: w.period_type, weekdays: w.weekdays || [],
       month_days: w.month_days || [], run_time: w.run_time ? w.run_time.slice(0, 5) : '',
       assignee_ids: w.assignee_ids || [], is_active: w.is_active,
@@ -1682,7 +1685,7 @@ export function PlannedWorksSection() {
     if (form.period_type === 'weekdays' && form.weekdays.length === 0) { toast.error('Выберите дни недели'); return; }
     if (form.period_type === 'month_days' && form.month_days.length === 0) { toast.error('Выберите числа месяца'); return; }
     setSaving(true);
-    const payload = { ...form, client_id: form.client_id ? Number(form.client_id) : null, run_time: form.run_time || null };
+    const payload = { ...form, client_id: form.client_id ? Number(form.client_id) : null, work_type_id: form.work_type_id ? Number(form.work_type_id) : null, run_time: form.run_time || null };
     const res = modal.item
       ? await api(`resource=planned_works&id=${modal.item.id}`, 'PUT', payload)
       : await api('resource=planned_works', 'POST', payload);
@@ -1725,18 +1728,19 @@ export function PlannedWorksSection() {
           <table className="w-full text-sm">
             <thead className="bg-secondary/60">
               <tr>
-                {['Период', 'Клиент', 'Ответственные', 'Описание', 'Выполнение', 'Активна', ''].map(h => (
+                {['Период', 'Вид работ', 'Клиент', 'Ответственные', 'Описание', 'Выполнение', 'Активна', ''].map(h => (
                   <th key={h} className="text-left px-3 py-2 text-xs text-muted-foreground font-medium whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {items.length === 0 && (
-                <tr><td colSpan={7} className="text-center py-8 text-muted-foreground text-sm">Нет записей</td></tr>
+                <tr><td colSpan={8} className="text-center py-8 text-muted-foreground text-sm">Нет записей</td></tr>
               )}
               {items.map(w => (
                 <tr key={w.id} className={`border-t border-border hover:bg-secondary/30 transition-colors ${w.is_active ? '' : 'opacity-60'}`}>
                   <td className="px-3 py-2 text-xs whitespace-nowrap">{fmtDate(w.start_date)} — {fmtDate(w.end_date)}</td>
+                  <td className="px-3 py-2 text-xs">{w.work_type_name || '—'}</td>
                   <td className="px-3 py-2 font-medium">{w.client_name || '—'}</td>
                   <td className="px-3 py-2 text-xs">{(w.assignee_ids || []).map(userName).join(', ') || '—'}</td>
                   <td className="px-3 py-2 text-xs text-muted-foreground max-w-xs truncate" title={w.description}>{w.description || '—'}</td>
@@ -1774,6 +1778,21 @@ export function PlannedWorksSection() {
                 <label className="text-xs text-muted-foreground mb-1 block">Дата конца</label>
                 <Input type="date" value={form.end_date} onChange={e => setForm(f => ({ ...f, end_date: e.target.value }))} className="bg-secondary/40 border-border" />
               </div>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground mb-1 block">Вид работ</label>
+              <Select value={form.work_type_id || 'none'} onValueChange={v => {
+                const wt = workTypes.find(x => String(x.id) === v);
+                setForm(f => ({ ...f, work_type_id: v === 'none' ? '' : v, description: wt && !f.description.trim() ? wt.name : f.description }));
+              }}>
+                <SelectTrigger className="bg-secondary/40 border-border"><SelectValue placeholder="Не выбран" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Не выбран</SelectItem>
+                  {workTypes.filter(w => w.is_active || String(w.id) === form.work_type_id).map(w => (
+                    <SelectItem key={w.id} value={String(w.id)}>{w.name} ({w.duration_minutes} мин)</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <label className="text-xs text-muted-foreground mb-1 block">Клиент</label>

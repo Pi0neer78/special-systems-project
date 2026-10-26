@@ -91,11 +91,12 @@ def fetch_rs_releases() -> dict:
 
 
 PW_SELECT = f"""
-    SELECT pw.id, pw.start_date, pw.end_date, pw.client_id, c.name AS client_name,
+    SELECT pw.id, pw.start_date, pw.end_date, pw.client_id, c.name AS client_name, pw.work_type_id, wt.name AS work_type_name,
            pw.description, pw.period_type, pw.weekdays, pw.month_days, pw.run_time, pw.is_active,
            COALESCE((SELECT array_agg(a.user_id ORDER BY a.user_id) FROM {SCHEMA}.planned_work_assignees a WHERE a.planned_work_id = pw.id), '{{}}') AS assignee_ids
     FROM {SCHEMA}.planned_works pw
     LEFT JOIN {SCHEMA}.clients c ON c.id = pw.client_id
+    LEFT JOIN {SCHEMA}.work_types wt ON wt.id = pw.work_type_id
 """
 PW_MAX_DAYS = 400
 
@@ -133,7 +134,7 @@ def sync_planned_work(cur, pid):
             cur.execute(f"DELETE FROM {SCHEMA}.task_watchers WHERE task_id=%s", (t['id'],))
             cur.execute(f"DELETE FROM {SCHEMA}.tasks WHERE id=%s", (t['id'],))
         return
-    title = 'Плановые работы' + (f": {pw['client_name']}" if pw['client_name'] else '')
+    title = (pw['work_type_name'] or 'Плановые работы') + (f": {pw['client_name']}" if pw['client_name'] else '')
     all_day = pw['run_time'] is None
     wanted = {(d, uid) for d in pw_dates(pw) for uid in (pw['assignee_ids'] or [])}
     have = {}
@@ -485,9 +486,9 @@ def handler(event: dict, context) -> dict:
                         return err('Дата конца раньше даты начала')
                     ptype, weekdays, month_days, run_time = pw_params(body)
                     cur.execute(f"""
-                        INSERT INTO {SCHEMA}.planned_works (start_date, end_date, client_id, description, period_type, weekdays, month_days, run_time, is_active)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
-                    """, (body['start_date'], body['end_date'], body.get('client_id') or None, body.get('description') or '', ptype, weekdays, month_days, run_time, bool(body.get('is_active', True))))
+                        INSERT INTO {SCHEMA}.planned_works (start_date, end_date, client_id, work_type_id, description, period_type, weekdays, month_days, run_time, is_active)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+                    """, (body['start_date'], body['end_date'], body.get('client_id') or None, body.get('work_type_id') or None, body.get('description') or '', ptype, weekdays, month_days, run_time, bool(body.get('is_active', True))))
                     new_id = cur.fetchone()['id']
                     for uid in {int(x) for x in (body.get('assignee_ids') or [])}:
                         cur.execute(f"INSERT INTO {SCHEMA}.planned_work_assignees (planned_work_id, user_id) VALUES (%s,%s)", (new_id, uid))
@@ -504,10 +505,10 @@ def handler(event: dict, context) -> dict:
                         return err('Дата конца раньше даты начала')
                     ptype, weekdays, month_days, run_time = pw_params(body)
                     cur.execute(f"""
-                        UPDATE {SCHEMA}.planned_works SET start_date=%s, end_date=%s, client_id=%s, description=%s,
+                        UPDATE {SCHEMA}.planned_works SET start_date=%s, end_date=%s, client_id=%s, work_type_id=%s, description=%s,
                           period_type=%s, weekdays=%s, month_days=%s, run_time=%s, is_active=%s, updated_at=NOW()
                         WHERE id=%s RETURNING id
-                    """, (body['start_date'], body['end_date'], body.get('client_id') or None, body.get('description') or '', ptype, weekdays, month_days, run_time, bool(body.get('is_active', True)), rid_int))
+                    """, (body['start_date'], body['end_date'], body.get('client_id') or None, body.get('work_type_id') or None, body.get('description') or '', ptype, weekdays, month_days, run_time, bool(body.get('is_active', True)), rid_int))
                     if not cur.fetchone():
                         return err('Not found', 404)
                     cur.execute(f"DELETE FROM {SCHEMA}.planned_work_assignees WHERE planned_work_id=%s", (rid_int,))

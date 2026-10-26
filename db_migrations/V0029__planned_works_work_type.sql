@@ -1,0 +1,1 @@
+ALTER TABLE t_p34673685_special_systems_proj.planned_works ADD COLUMN work_type_id INTEGER NULL REFERENCES t_p34673685_special_systems_proj.work_types(id);
