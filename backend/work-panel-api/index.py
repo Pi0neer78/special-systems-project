@@ -1,5 +1,6 @@
 import json
 import re
+import paramiko
 import os
 import hashlib
 import hmac
@@ -29,7 +30,45 @@ def cdn_url(key: str) -> str:
     return f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/{key}"
 
 
+FTP_DIR = 'ftp_files'
+FTP_CHUNK = 1024 * 1024
+
+
+def sftp_open():
+    t = paramiko.Transport((os.environ['FTP_HOST'], 22))
+    t.connect(username=os.environ['FTP_USER'], password=os.environ['FTP_PASSWORD'])
+    return paramiko.SFTPClient.from_transport(t), t
+
+
+def ftp_remote_path(file_url: str):
+    prefix = f"ftp://{FTP_DIR}/"
+    if not file_url.startswith(prefix):
+        return None
+    name = file_url[len(prefix):]
+    if not re.fullmatch(r'[0-9a-f]{32}(\.[A-Za-z0-9]{1,16})?', name):
+        return None
+    return f"{FTP_DIR}/{name}"
+
+
+def delete_ftp_object(file_url: str):
+    path = ftp_remote_path(file_url)
+    if not path:
+        return
+    try:
+        sf, t = sftp_open()
+        try:
+            sf.remove(path)
+        finally:
+            sf.close()
+            t.close()
+    except Exception:
+        pass
+
+
 def delete_s3_object(file_url: str):
+    if file_url.startswith('ftp://'):
+        delete_ftp_object(file_url)
+        return
     prefix = f"https://cdn.poehali.dev/projects/{os.environ['AWS_ACCESS_KEY_ID']}/bucket/"
     if not file_url.startswith(prefix):
         return
@@ -425,11 +464,72 @@ def handler(event: dict, context) -> dict:
                 credential_id = qs.get('credential_id', '')
                 if not credential_id:
                     return err('credential_id required')
+                if qs.get('action') == 'ftp_download':
+                    cur.execute(f"SELECT file_url, file_size, storage FROM {SCHEMA}.credential_files WHERE id=%s", [qs.get('id', 0)])
+                    row = cur.fetchone()
+                    path = ftp_remote_path(row['file_url']) if row and row['storage'] == 'ftp' else None
+                    if not path:
+                        return err('Not found', 404)
+                    index = max(0, int(qs.get('index', 0)))
+                    sf, t = sftp_open()
+                    try:
+                        with sf.open(path, 'rb') as fh:
+                            fh.seek(index * FTP_CHUNK)
+                            chunk = fh.read(FTP_CHUNK)
+                        total_size = sf.stat(path).st_size
+                    finally:
+                        sf.close()
+                        t.close()
+                    return ok({'data': base64.b64encode(chunk).decode(), 'total_size': total_size, 'chunk': FTP_CHUNK})
+                storage = 'ftp' if qs.get('storage') == 'ftp' else 's3'
                 cur.execute(f"""
                     SELECT id, credential_id, file_name, file_url, file_size, content_type, created_at, description
-                    FROM {SCHEMA}.credential_files WHERE credential_id=%s ORDER BY created_at DESC
-                """, [credential_id])
+                    FROM {SCHEMA}.credential_files WHERE credential_id=%s AND storage=%s ORDER BY created_at DESC
+                """, [credential_id, storage])
                 return ok([dict(r) for r in cur.fetchall()])
+            if method == 'POST' and qs.get('action') == 'ftp_chunk':
+                credential_id = int(body.get('credential_id') or 0)
+                upload_id = str(body.get('upload_id', ''))
+                index = int(body.get('index', 0))
+                if not credential_id or not re.fullmatch(r'[0-9a-f]{32}', upload_id) or index < 0 or index > 40:
+                    return err('invalid chunk')
+                raw = base64.b64decode(body.get('data', '').split(',')[-1])
+                sf, t = sftp_open()
+                try:
+                    with sf.open(f"{FTP_DIR}/.up_{upload_id}", 'wb' if index == 0 else 'ab') as fh:
+                        fh.write(raw)
+                finally:
+                    sf.close()
+                    t.close()
+                return ok({'index': index})
+            if method == 'POST' and qs.get('action') == 'ftp_complete':
+                credential_id = int(body.get('credential_id') or 0)
+                upload_id = str(body.get('upload_id', ''))
+                file_name = body.get('file_name', 'file')
+                content_type = body.get('content_type', 'application/octet-stream')
+                if not credential_id or not re.fullmatch(r'[0-9a-f]{32}', upload_id):
+                    return err('invalid complete')
+                ext = ''
+                if '.' in file_name:
+                    e = file_name.rsplit('.', 1)[-1]
+                    if re.fullmatch(r'[A-Za-z0-9]{1,16}', e):
+                        ext = '.' + e
+                file_id = uuid.uuid4().hex
+                remote = f"{FTP_DIR}/{file_id}{ext}"
+                sf, t = sftp_open()
+                try:
+                    sf.rename(f"{FTP_DIR}/.up_{upload_id}", remote)
+                    size = sf.stat(remote).st_size
+                finally:
+                    sf.close()
+                    t.close()
+                cur.execute(f"""
+                    INSERT INTO {SCHEMA}.credential_files (credential_id, file_name, file_url, file_size, content_type, storage)
+                    VALUES (%s,%s,%s,%s,%s,'ftp')
+                    RETURNING id, credential_id, file_name, file_url, file_size, content_type, created_at, description
+                """, (credential_id, file_name, f"ftp://{remote}", size, content_type))
+                conn.commit()
+                return ok(dict(cur.fetchone()))
             if method == 'POST' and qs.get('action') == 'chunk':
                 credential_id = int(body.get('credential_id') or 0)
                 upload_id = str(body.get('upload_id', ''))

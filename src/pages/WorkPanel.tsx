@@ -49,6 +49,40 @@ async function downloadFile(e: React.MouseEvent, url: string, name: string) {
   }
 }
 
+async function fetchFtpBlob(id: number, type: string): Promise<Blob> {
+  const parts: BlobPart[] = [];
+  let index = 0;
+  for (;;) {
+    const r = await api(`resource=files&action=ftp_download&id=${id}&credential_id=0&index=${index}`);
+    if (!r || r.error || typeof r.data !== 'string') throw new Error(r?.error || 'download failed');
+    const bin = atob(r.data);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    parts.push(arr);
+    index++;
+    if (index * r.chunk >= r.total_size) break;
+  }
+  return new Blob(parts, { type });
+}
+
+async function downloadFtpFile(e: React.MouseEvent, f: { id: number; file_name: string; content_type: string | null }) {
+  e.preventDefault();
+  const tid = toast.loading(`Скачивание «${f.file_name}»...`);
+  try {
+    const blob = await fetchFtpBlob(f.id, f.content_type || 'application/octet-stream');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = f.file_name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    toast.dismiss(tid);
+  } catch {
+    toast.error('Не удалось скачать файл', { id: tid });
+  }
+}
+
 async function api(qs: string, method = 'GET', body?: object) {
   const res = await fetch(`${API_URL}?${qs}`, {
     method,
@@ -237,7 +271,8 @@ function sortFiles(files: CredFile[], sort: FileSort): CredFile[] {
 
 const isImageFile = (name: string) => ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(name.split('.').pop()?.toLowerCase() || '');
 
-function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number; onCountChange?: (count: number) => void }) {
+function CredFilesBlock({ credentialId, onCountChange, storage = 's3' }: { credentialId: number; onCountChange?: (count: number) => void; storage?: 's3' | 'ftp' }) {
+  const isFtp = storage === 'ftp';
   const [files, setFiles] = useState<CredFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -345,6 +380,19 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
     if (images.length < 2 || previewIdx < 0) return;
     setPreview(images[(previewIdx + d + images.length) % images.length].id);
   };
+  const [ftpPreviewUrl, setFtpPreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    setFtpPreviewUrl(null);
+    if (!isFtp || !previewFile) return;
+    let cancelled = false;
+    let url = '';
+    fetchFtpBlob(previewFile.id, previewFile.content_type || 'image/png').then(b => {
+      if (cancelled) return;
+      url = URL.createObjectURL(b);
+      setFtpPreviewUrl(url);
+    }).catch(() => { if (!cancelled) toast.error('Не удалось загрузить изображение'); });
+    return () => { cancelled = true; if (url) URL.revokeObjectURL(url); };
+  }, [previewFile?.id, isFtp]);
   useEffect(() => {
     if (preview === null) return;
     const h = (e: KeyboardEvent) => {
@@ -357,13 +405,13 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
 
   const load = () => {
     setLoading(true);
-    api(`resource=files&credential_id=${credentialId}`).then(d => {
+    api(`resource=files&credential_id=${credentialId}${isFtp ? '&storage=ftp' : ''}`).then(d => {
       setLoading(false);
       if (Array.isArray(d)) { setFiles(d); onCountChange?.(d.length); }
     });
   };
 
-  useEffect(() => { load(); }, [credentialId]);
+  useEffect(() => { load(); }, [credentialId, storage]);
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const list = e.target.files;
@@ -387,11 +435,11 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
             reader.onerror = reject;
             reader.readAsDataURL(file.slice(idx * CHUNK, (idx + 1) * CHUNK));
           });
-          const r = await api('resource=files&action=chunk', 'POST', { credential_id: credentialId, upload_id: uploadId, index: idx, data });
+          const r = await api(`resource=files&action=${isFtp ? 'ftp_chunk' : 'chunk'}`, 'POST', { credential_id: credentialId, upload_id: uploadId, index: idx, data });
           if (!r || r.error) { failed = true; toast.error(r?.error || `Не удалось загрузить «${file.name}»`); break; }
         }
         if (failed) continue;
-        const res = await api('resource=files&action=complete', 'POST', {
+        const res = await api(`resource=files&action=${isFtp ? 'ftp_complete' : 'complete'}`, 'POST', {
           credential_id: credentialId, upload_id: uploadId, total, file_name: file.name, content_type: contentType,
         });
         if (!res || res.error || !res.id) {
@@ -420,7 +468,7 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
         className="absolute right-0 top-0 h-full w-2 cursor-col-resize hover:bg-primary/40 rounded-r-lg" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 flex-1 min-w-0 mr-3">
-        <div className="text-xs font-mono text-primary uppercase tracking-widest">Файлы</div>
+        <div className={`text-xs font-mono uppercase tracking-widest ${isFtp ? 'text-green-600' : 'text-primary'}`}>{isFtp ? 'ФТП' : 'Файлы'}</div>
         <div className="relative flex-1 min-w-0">
           <Icon name="Search" size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск по имени и описанию"
@@ -491,7 +539,7 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
                           onBlur={saveEdit} onKeyDown={e => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null); }}
                           className="w-full h-6 text-xs rounded border border-primary bg-background px-2" />
                       ) : (
-                        <a href={f.file_url} onClick={e => downloadFile(e, f.file_url, f.file_name)} className="text-xs break-all hover:text-primary transition-colors cursor-pointer">{f.file_name}</a>
+                        <a href={isFtp ? '#' : f.file_url} onClick={e => isFtp ? downloadFtpFile(e, f) : downloadFile(e, f.file_url, f.file_name)} className="text-xs break-all hover:text-primary transition-colors cursor-pointer">{f.file_name}</a>
                       )}
                     </td>
                     <td className="py-0.5 px-2 text-xs text-muted-foreground whitespace-nowrap">{new Date(f.created_at).toLocaleString('ru', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
@@ -542,7 +590,7 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
           </DialogHeader>
           {previewFile && (
             <div className="relative flex items-center justify-center">
-              <img src={previewFile.file_url} alt={previewFile.file_name} className="max-w-full max-h-[75vh] object-contain rounded" />
+              <img src={isFtp ? (ftpPreviewUrl || '') : previewFile.file_url} alt={previewFile.file_name} className="max-w-full max-h-[75vh] object-contain rounded" />
               {images.length > 1 && (
                 <>
                   <button onClick={() => stepPreview(-1)} title="Предыдущая"
@@ -559,7 +607,7 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
           )}
           {previewFile && (
             <div className="flex justify-end">
-              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={e => downloadFile(e as unknown as React.MouseEvent, previewFile.file_url, previewFile.file_name)}>
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1" onClick={e => isFtp ? downloadFtpFile(e as unknown as React.MouseEvent, previewFile) : downloadFile(e as unknown as React.MouseEvent, previewFile.file_url, previewFile.file_name)}>
                 <Icon name="Download" size={13} /> Скачать
               </Button>
             </div>
@@ -735,6 +783,8 @@ function CredentialsSection({ isAdmin, focus }: { isAdmin: boolean; focus?: (Sea
   const [selectedCred, setSelectedCred] = useState<Credential | null>(null);
   const [filesContainer, setFilesContainer] = useState<{ id: number; folder_id: number; name: string } | null>(null);
   const [filesCount, setFilesCount] = useState(0);
+  const [ftpCount, setFtpCount] = useState(0);
+  const [viewingFtp, setViewingFtp] = useState(false);
   const [viewingFiles, setViewingFiles] = useState(false);
   const [form, setForm] = useState<Omit<Credential, 'id'>>(EMPTY_CRED);
   const [dirty, setDirty] = useState(false);
@@ -803,6 +853,9 @@ function CredentialsSection({ isAdmin, focus }: { isAdmin: boolean; focus?: (Sea
       setFilesContainer(d);
       api(`resource=files&credential_id=${d.id}`).then(files => {
         if (Array.isArray(files)) setFilesCount(files.length);
+      });
+      api(`resource=files&credential_id=${d.id}&storage=ftp`).then(files => {
+        if (Array.isArray(files)) setFtpCount(files.length);
       });
     }
   });
@@ -1074,13 +1127,24 @@ function CredentialsSection({ isAdmin, focus }: { isAdmin: boolean; focus?: (Sea
               </Button>
               {filesContainer && (
                 <button
-                  onClick={() => { setViewingFiles(true); setSelectedCred(null); setDirty(false); }}
+                  onClick={() => { setViewingFiles(true); setViewingFtp(false); setSelectedCred(null); setDirty(false); }}
                   className={`flex items-center gap-1.5 px-3 py-1 rounded text-sm font-medium transition-colors ml-auto ${
-                    viewingFiles ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 hover:bg-secondary border border-border text-foreground'
+                    viewingFiles && !viewingFtp ? 'bg-primary text-primary-foreground' : 'bg-secondary/50 hover:bg-secondary border border-border text-foreground'
                   }`}
                 >
                   <Icon name="Paperclip" size={13} />
                   ФАЙЛЫ ({filesCount} шт)
+                </button>
+              )}
+              {filesContainer && (
+                <button
+                  onClick={() => { setViewingFiles(true); setViewingFtp(true); setSelectedCred(null); setDirty(false); }}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded text-sm font-medium transition-colors ${
+                    viewingFiles && viewingFtp ? 'bg-green-600 text-white' : 'bg-green-600/15 hover:bg-green-600/25 border border-green-600/40 text-green-700'
+                  }`}
+                >
+                  <Icon name="Server" size={13} />
+                  ФТП ({ftpCount} шт)
                 </button>
               )}
             </div>
@@ -1089,7 +1153,7 @@ function CredentialsSection({ isAdmin, focus }: { isAdmin: boolean; focus?: (Sea
             <div className="flex-1 overflow-y-auto p-5">
               {viewingFiles && filesContainer ? (
                 <div>
-                  <CredFilesBlock credentialId={filesContainer.id} onCountChange={setFilesCount} />
+                  <CredFilesBlock key={viewingFtp ? 'ftp' : 's3'} credentialId={filesContainer.id} storage={viewingFtp ? 'ftp' : 's3'} onCountChange={viewingFtp ? setFtpCount : setFilesCount} />
                 </div>
               ) : (selectedCred || dirty) ? (
                 <div className="space-y-4 max-w-xl">
