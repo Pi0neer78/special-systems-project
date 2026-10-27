@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+import { usePolling, sharedFetchJson } from '@/lib/polling';
 import { UsersSection, ClientsSection, DatabasesSection, WorkTypesSection, PlannedWorksSection, api as adminApi } from '@/pages/Admin';
 
 
@@ -4060,7 +4061,7 @@ function WorkLogin({ onLogin }: { onLogin: (info: AuthInfo) => void }) {
 // ══════════════════════════════════════════════════════════════════════════════
 
 const REMINDER_LEAD_MS = 15 * 60 * 1000;
-const REMINDER_POLL_MS = 30 * 1000;
+const REMINDER_POLL_MS = 60 * 1000;
 const SNOOZE_OPTIONS = [
   { value: 5, label: '5 мин' },
   { value: 10, label: '10 мин' },
@@ -4087,6 +4088,7 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
     audioRef.current = new Audio('/notification.mp3');
   }, []);
 
+  const checkRef = useRef<() => void | Promise<void>>(() => {});
   useEffect(() => {
     let cancelled = false;
 
@@ -4120,10 +4122,10 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
       });
     };
 
-    check();
-    const interval = setInterval(check, REMINDER_POLL_MS);
-    return () => { cancelled = true; clearInterval(interval); };
+    checkRef.current = check;
+    return () => { cancelled = true; };
   }, [token, userId]);
+  usePolling(() => checkRef.current(), REMINDER_POLL_MS, [token, userId]);
 
   const current = queue[0];
   const dismiss = () => setQueue(q => q.slice(1));
@@ -4267,12 +4269,12 @@ function NewTicketNotifier({ token, isAdmin, onOpenTicket }: { token: string; is
     }
   }, []);
 
+  const checkRef = useRef<() => void | Promise<void>>(() => {});
   useEffect(() => {
     let cancelled = false;
 
     const check = async () => {
-      const data = await fetch(`${TICKETS_URL}?resource=tickets`, { headers: { 'X-Admin-Token': token } })
-        .then(r => r.json()).catch(() => null);
+      const data = await sharedFetchJson(`${TICKETS_URL}?resource=tickets`, { 'X-Admin-Token': token }, 20000) as Ticket[] | null;
       if (cancelled || !Array.isArray(data)) return;
 
       const ids = new Set<number>(data.map((t: Ticket) => t.id));
@@ -4316,10 +4318,10 @@ function NewTicketNotifier({ token, isAdmin, onOpenTicket }: { token: string; is
       });
     };
 
-    check();
-    const interval = setInterval(check, TICKET_POLL_MS);
-    return () => { cancelled = true; clearInterval(interval); };
+    checkRef.current = check;
+    return () => { cancelled = true; };
   }, [token, isAdmin]);
+  usePolling(() => checkRef.current(), TICKET_POLL_MS, [token, isAdmin]);
 
   return null;
 }
@@ -4328,7 +4330,7 @@ function NewTicketNotifier({ token, isAdmin, onOpenTicket }: { token: string; is
 // NEW CLIENT MESSAGE NOTIFIER (звук + уведомление на ответ клиента в чате заявки)
 // ══════════════════════════════════════════════════════════════════════════════
 
-const MESSAGE_POLL_MS = 20 * 1000;
+const MESSAGE_POLL_MS = 45 * 1000;
 
 type ClientMessageRow = { id: number; ticket_id: number; client_name: string; sender_name: string | null; message: string | null; created_at: string };
 
@@ -4343,12 +4345,12 @@ function NewClientMessageNotifier({ token }: { token: string }) {
     }
   }, []);
 
+  const checkRef = useRef<() => void | Promise<void>>(() => {});
   useEffect(() => {
     let cancelled = false;
 
     const check = async () => {
-      const data = await fetch(`${TICKETS_URL}?resource=client-messages`, { headers: { 'X-Admin-Token': token } })
-        .then(r => r.json()).catch(() => null);
+      const data = await sharedFetchJson(`${TICKETS_URL}?resource=client-messages`, { 'X-Admin-Token': token }, 20000) as ClientMessageRow[] | null;
       if (cancelled || !Array.isArray(data)) return;
 
       const ids = new Set<number>(data.map((m: ClientMessageRow) => m.id));
@@ -4380,10 +4382,10 @@ function NewClientMessageNotifier({ token }: { token: string }) {
       });
     };
 
-    check();
-    const interval = setInterval(check, MESSAGE_POLL_MS);
-    return () => { cancelled = true; clearInterval(interval); };
+    checkRef.current = check;
+    return () => { cancelled = true; };
   }, [token]);
+  usePolling(() => checkRef.current(), MESSAGE_POLL_MS, [token]);
 
   return null;
 }
@@ -4433,28 +4435,27 @@ export default function WorkPanel() {
     else if (n.tab) setTab(n.tab as Tab);
   };
   const authed = !!authInfo;
+  const loadUnreadRef = useRef<(force?: boolean) => void>(() => {});
+  loadUnreadRef.current = async (force = false) => {
+    if (!authed) return;
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return;
+    const data = await sharedFetchJson(`${TICKETS_URL}?resource=tickets`, { 'X-Admin-Token': token }, 20000, force) as Ticket[] | null;
+    if (!Array.isArray(data)) return;
+    setUnreadTickets(data.filter((t: Ticket) => (t.unread_count || 0) > 0).length);
+  };
   useEffect(() => {
     if (!authed) return;
-    let cancelled = false;
-    const loadUnread = async () => {
-      const token = localStorage.getItem(TOKEN_KEY);
-      if (!token) return;
-      const data = await fetch(`${TICKETS_URL}?resource=tickets`, { headers: { 'X-Admin-Token': token } })
-        .then(r => r.json()).catch(() => null);
-      if (cancelled || !Array.isArray(data)) return;
-      setUnreadTickets(data.filter((t: Ticket) => (t.unread_count || 0) > 0).length);
-    };
-    loadUnread();
-    const interval = setInterval(loadUnread, 20000);
-    window.addEventListener('tickets-refresh', loadUnread);
-    window.addEventListener('tickets-read', loadUnread);
+    const soft = () => loadUnreadRef.current(false);
+    const hard = () => loadUnreadRef.current(true);
+    window.addEventListener('tickets-refresh', hard);
+    window.addEventListener('tickets-read', hard);
     return () => {
-      cancelled = true;
-      clearInterval(interval);
-      window.removeEventListener('tickets-refresh', loadUnread);
-      window.removeEventListener('tickets-read', loadUnread);
+      window.removeEventListener('tickets-refresh', hard);
+      window.removeEventListener('tickets-read', hard);
     };
   }, [authed]);
+  usePolling(() => loadUnreadRef.current(false), 60000, [authed]);
   const handleOpenTicket = (id: number) => { setTab('tickets'); setOpenTicketId(id); window.dispatchEvent(new Event('tickets-refresh')); };
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [configDbs, setConfigDbs] = useState<import('@/pages/Admin').ConfigDB[]>([]);

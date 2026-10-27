@@ -1,3 +1,4 @@
+import { usePolling } from '@/lib/polling';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Icon from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
@@ -5,7 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 
 const TICKETS_URL = 'https://functions.poehali.dev/4866cc97-c798-42d4-a280-d35071d704a8';
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
-const POLL_MS = 15 * 1000;
+const POLL_MS = 30 * 1000;
 
 type TicketMessage = {
   id: number;
@@ -62,6 +63,7 @@ export default function TicketChat({
   const [sending, setSending] = useState(false);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [error, setError] = useState('');
+  const lastSigRef = useRef<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounter = useRef(0);
@@ -70,14 +72,15 @@ export default function TicketChat({
   const load = useCallback(async () => {
     const data = await fetch(`${TICKETS_URL}?resource=ticket-messages&ticket_id=${ticketId}`, { headers: authHeader })
       .then(r => r.json()).catch(() => null);
-    if (Array.isArray(data)) { setMessages(data); onLoadedRef.current?.(); }
+    if (Array.isArray(data)) {
+      const sig = data.length + ':' + (data[data.length - 1]?.id ?? '');
+      const changed = sig !== lastSigRef.current;
+      lastSigRef.current = sig;
+      if (changed) { setMessages(data); onLoadedRef.current?.(); }
+    }
   }, [ticketId, authHeader]);
 
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, POLL_MS);
-    return () => clearInterval(interval);
-  }, [load]);
+  usePolling(load, POLL_MS, [load]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });

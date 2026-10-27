@@ -1,3 +1,4 @@
+import { usePolling } from '@/lib/polling';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Icon from '@/components/ui/icon';
@@ -13,7 +14,7 @@ const TICKETS_URL = 'https://functions.poehali.dev/4866cc97-c798-42d4-a280-d3507
 const CLIENT_TOKEN_KEY = 'client_token';
 const SPLIT_WIDTH_KEY = 'pa_split_width';
 const DEFAULT_SPLIT = 50;
-const POLL_INTERVAL_MS = 20000;
+const POLL_INTERVAL_MS = 45000;
 
 type IncomingMessage = { id: number; ticket_id: number; sender_name: string | null; message: string | null; file_name: string | null };
 
@@ -249,11 +250,7 @@ function TicketsPanel({ token, clientName, onNewClick, refreshSignal, onUnreadCh
     load(true);
   }, [token, load]);
 
-  useEffect(() => {
-    checkMessages();
-    const timer = setInterval(checkMessages, POLL_INTERVAL_MS);
-    return () => clearInterval(timer);
-  }, [checkMessages]);
+  usePolling(checkMessages, POLL_INTERVAL_MS, [checkMessages]);
 
   const closeDetail = () => { setDetailTicket(null); load(true); };
   const totalUnread = tickets.reduce((n, t) => n + (t.unread_count || 0), 0);
