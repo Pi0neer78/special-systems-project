@@ -938,6 +938,11 @@ def handler(event: dict, context) -> dict:
             if not ticket_access_ok(ticket_id):
                 cur.close(); conn.close()
                 return resp(403, {'error': 'Нет доступа к заявке'})
+            if qs.get('check') == '1':
+                cur.execute(f"SELECT COUNT(*) AS cnt, COALESCE(MAX(id), 0) AS last_id FROM {SCHEMA}.ticket_messages WHERE ticket_id = %s", (ticket_id,))
+                row = cur.fetchone()
+                cur.close(); conn.close()
+                return resp(200, {'sig': f"{row['cnt']}:{row['last_id']}"})
             cur.execute(f"""
                 SELECT id, ticket_id, sender_type, sender_id, sender_name, message,
                        file_url, file_name, file_size, content_type, created_at

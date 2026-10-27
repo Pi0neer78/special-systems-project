@@ -73,14 +73,20 @@ export default function TicketChat({
     const data = await fetch(`${TICKETS_URL}?resource=ticket-messages&ticket_id=${ticketId}`, { headers: authHeader })
       .then(r => r.json()).catch(() => null);
     if (Array.isArray(data)) {
-      const sig = data.length + ':' + (data[data.length - 1]?.id ?? '');
-      const changed = sig !== lastSigRef.current;
-      lastSigRef.current = sig;
-      if (changed) { setMessages(data); onLoadedRef.current?.(); }
+      lastSigRef.current = data.length + ':' + (data[data.length - 1]?.id ?? 0);
+      setMessages(data);
+      onLoadedRef.current?.();
     }
   }, [ticketId, authHeader]);
 
-  usePolling(load, POLL_MS, [load]);
+  const poll = useCallback(async () => {
+    if (lastSigRef.current === null) { await load(); return; }
+    const r = await fetch(`${TICKETS_URL}?resource=ticket-messages&ticket_id=${ticketId}&check=1`, { headers: authHeader })
+      .then(x => x.json()).catch(() => null);
+    if (r && typeof r.sig === 'string' && r.sig !== lastSigRef.current) await load();
+  }, [ticketId, authHeader, load]);
+
+  usePolling(poll, POLL_MS, [poll]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
