@@ -430,6 +430,38 @@ def handler(event: dict, context) -> dict:
                     FROM {SCHEMA}.credential_files WHERE credential_id=%s ORDER BY created_at DESC
                 """, [credential_id])
                 return ok([dict(r) for r in cur.fetchall()])
+            if method == 'POST' and qs.get('action') == 'presign':
+                credential_id = body.get('credential_id')
+                file_name = body.get('file_name', 'file')
+                content_type = body.get('content_type', 'application/octet-stream')
+                if not credential_id:
+                    return err('credential_id required')
+                ext = ''
+                if '.' in file_name:
+                    ext = '.' + file_name.rsplit('.', 1)[-1]
+                key = f"credentials/{credential_id}/{uuid.uuid4().hex}{ext}"
+                upload_url = get_s3().generate_presigned_url(
+                    'put_object',
+                    Params={'Bucket': S3_BUCKET, 'Key': key, 'ContentType': content_type},
+                    ExpiresIn=900,
+                )
+                return ok({'upload_url': upload_url, 'key': key, 'content_type': content_type})
+            if method == 'POST' and qs.get('action') == 'register':
+                credential_id = body.get('credential_id')
+                key = body.get('key', '')
+                if not credential_id or not key.startswith(f"credentials/{int(credential_id)}/"):
+                    return err('invalid key')
+                try:
+                    head = get_s3().head_object(Bucket=S3_BUCKET, Key=key)
+                except Exception:
+                    return err('file not uploaded', 400)
+                cur.execute(f"""
+                    INSERT INTO {SCHEMA}.credential_files (credential_id, file_name, file_url, file_size, content_type)
+                    VALUES (%s,%s,%s,%s,%s)
+                    RETURNING id, credential_id, file_name, file_url, file_size, content_type, created_at, description
+                """, (credential_id, body.get('file_name', 'file'), cdn_url(key), head['ContentLength'], body.get('content_type', 'application/octet-stream')))
+                conn.commit()
+                return ok(dict(cur.fetchone()))
             if method == 'POST':
                 credential_id = body.get('credential_id')
                 file_name = body.get('file_name', 'file')

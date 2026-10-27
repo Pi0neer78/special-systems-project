@@ -375,6 +375,29 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
           toast.error(`Файл «${file.name}» больше 20 МБ — загрузка невозможна`);
           continue;
         }
+        const contentType = file.type || 'application/octet-stream';
+        let done = false;
+        try {
+          const pre = await api('resource=files&action=presign', 'POST', {
+            credential_id: credentialId, file_name: file.name, content_type: contentType,
+          });
+          if (pre?.upload_url) {
+            const put = await fetch(pre.upload_url, { method: 'PUT', headers: { 'Content-Type': contentType }, body: file });
+            if (put.ok) {
+              const reg = await api('resource=files&action=register', 'POST', {
+                credential_id: credentialId, key: pre.key, file_name: file.name, content_type: contentType,
+              });
+              done = !!reg?.id;
+            }
+          }
+        } catch {
+          done = false;
+        }
+        if (done) continue;
+        if (file.size > 4 * 1024 * 1024) {
+          toast.error(`Не удалось загрузить «${file.name}»: прямая загрузка недоступна, а файл слишком большой для обычной`);
+          continue;
+        }
         const data: string = await new Promise((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result as string);
@@ -384,7 +407,7 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
         const res = await api('resource=files', 'POST', {
           credential_id: credentialId,
           file_name: file.name,
-          content_type: file.type || 'application/octet-stream',
+          content_type: contentType,
           data,
         });
         if (!res || res.error || !res.id) {
