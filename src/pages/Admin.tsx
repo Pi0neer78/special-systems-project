@@ -1054,12 +1054,17 @@ export function ClientsSection({ configDbs, onClientsChanged }: { configDbs: Con
 
   const save = async () => {
     setSaving(true);
-    const payload = { ...form, parent_id: form.parent_id ? Number(form.parent_id) : null };
+    const payload = { ...form, login: form.login.trim() || null, parent_id: form.parent_id ? Number(form.parent_id) : null };
     let clientId = modal.item?.id;
     if (modal.item) {
       await api(`resource=clients&id=${clientId}`, 'PUT', payload);
     } else {
-      const res = await api('resource=clients', 'POST', payload);
+      const res = await api('resource=clients', 'POST', payload).catch(() => null);
+      if (!res || !res.id) {
+        toast.error(res?.error || 'Не удалось создать клиента');
+        setSaving(false);
+        return;
+      }
       clientId = res.id;
     }
     for (const dbId of removedDbIds) {

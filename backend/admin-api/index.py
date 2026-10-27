@@ -352,6 +352,10 @@ def handler(event: dict, context) -> dict:
                 if method == 'POST':
                     pwd_hash = hash_password(body['password']) if body.get('password') else None
                     pwd_plain = body.get('password') or None
+                    if body.get('login'):
+                        cur.execute(f"SELECT 1 FROM {SCHEMA}.clients WHERE login=%s", (body['login'],))
+                        if cur.fetchone():
+                            return err('Клиент с таким логином уже существует', 409)
                     cur.execute(f"""
                         INSERT INTO {SCHEMA}.clients
                           (parent_id, name, login, password_hash, password_plain, is_active, inn, address,
