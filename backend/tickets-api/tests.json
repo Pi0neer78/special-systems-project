@@ -10,7 +10,10 @@
       "name": "Неверный логин клиента",
       "method": "POST",
       "path": "/?resource=client-login",
-      "body": {"login": "noone", "password": "wrong"},
+      "body": {
+        "login": "noone",
+        "password": "wrong"
+      },
       "expectedStatus": 401
     },
     {
@@ -23,7 +26,10 @@
       "name": "Неверный логин сотрудника",
       "method": "POST",
       "path": "/?resource=staff-login",
-      "body": {"login": "noone", "password": "wrong"},
+      "body": {
+        "login": "noone",
+        "password": "wrong"
+      },
       "expectedStatus": 401
     },
     {
@@ -43,6 +49,13 @@
       "method": "GET",
       "path": "/?resource=client-messages",
       "expectedStatus": 401
+    },
+    {
+      "name": "Pulse без токена",
+      "method": "GET",
+      "path": "/?resource=pulse",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
     }
   ]
 }

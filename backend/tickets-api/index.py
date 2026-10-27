@@ -445,6 +445,33 @@ def handler(event: dict, context) -> dict:
     # ══════════════════════════════════════════════════════════════════════════
     # ЗАЯВКИ
     # ══════════════════════════════════════════════════════════════════════════
+    if resource == 'pulse' and method == 'GET':
+        admin_token = headers.get('X-Admin-Token', '')
+        admin_user_id, admin_role, _ = verify_admin_token(admin_token) if admin_token else (None, None, None)
+        if admin_user_id is None:
+            return resp(401, {'error': 'Не авторизован'})
+        flt = '' if admin_role == 'admin' else f"AND t.assignee_id = {int(admin_user_id)}"
+        conn = get_conn()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute(f"""
+            SELECT
+              (SELECT COALESCE(md5(string_agg(t.id::text, ',' ORDER BY t.id)), '')
+                 FROM {SCHEMA}.tickets t WHERE t.is_archived = FALSE {flt}) AS tickets_sig,
+              (SELECT COUNT(*) FROM {SCHEMA}.tickets t
+                 WHERE t.is_archived = FALSE {flt}
+                   AND EXISTS (SELECT 1 FROM {SCHEMA}.ticket_messages m
+                               WHERE m.ticket_id = t.id AND m.sender_type = 'client'
+                                 AND m.id > COALESCE((SELECT r.last_read_message_id FROM {SCHEMA}.ticket_reads r
+                                                      WHERE r.ticket_id = t.id AND r.staff_id = {int(admin_user_id)}), 0))) AS unread_tickets,
+              (SELECT COALESCE(MAX(m.id), 0) FROM {SCHEMA}.ticket_messages m
+                 JOIN {SCHEMA}.tickets t ON t.id = m.ticket_id
+                 WHERE m.sender_type = 'client' {flt}) AS client_msg_max
+        """)
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return resp(200, row)
+
     if resource == 'tickets':
         client_token = headers.get('X-Client-Token', '')
         admin_token = headers.get('X-Admin-Token', '')

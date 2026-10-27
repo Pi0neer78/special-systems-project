@@ -27,3 +27,9 @@ export function sharedFetchJson(url: string, headers: Record<string, string>, tt
   cache.set(key, { at: Date.now(), p });
   return p;
 }
+
+export type Pulse = { tickets_sig: string; unread_tickets: number; client_msg_max: number };
+
+export function getPulse(url: string, token: string, force = false): Promise<Pulse | null> {
+  return sharedFetchJson(`${url}?resource=pulse`, { 'X-Admin-Token': token }, 20000, force) as Promise<Pulse | null>;
+}

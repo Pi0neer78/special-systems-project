@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
-import { usePolling, sharedFetchJson } from '@/lib/polling';
+import { usePolling, sharedFetchJson, getPulse } from '@/lib/polling';
 import { UsersSection, ClientsSection, DatabasesSection, WorkTypesSection, PlannedWorksSection, api as adminApi } from '@/pages/Admin';
 
 
@@ -4260,6 +4260,7 @@ const TICKET_POLL_MS = 60 * 1000;
 
 function NewTicketNotifier({ token, isAdmin, onOpenTicket }: { token: string; isAdmin: boolean; onOpenTicket: (id: number) => void }) {
   const seenRef = useRef<Set<number> | null>(null);
+  const sigRef = useRef<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -4274,8 +4275,12 @@ function NewTicketNotifier({ token, isAdmin, onOpenTicket }: { token: string; is
     let cancelled = false;
 
     const check = async () => {
-      const data = await sharedFetchJson(`${TICKETS_URL}?resource=tickets`, { 'X-Admin-Token': token }, 20000) as Ticket[] | null;
+      const pulse = await getPulse(TICKETS_URL, token);
+      if (cancelled || !pulse) return;
+      if (seenRef.current !== null && pulse.tickets_sig === sigRef.current) return;
+      const data = await sharedFetchJson(`${TICKETS_URL}?resource=tickets`, { 'X-Admin-Token': token }, 5000, true) as Ticket[] | null;
       if (cancelled || !Array.isArray(data)) return;
+      sigRef.current = pulse.tickets_sig;
 
       const ids = new Set<number>(data.map((t: Ticket) => t.id));
 
@@ -4336,6 +4341,7 @@ type ClientMessageRow = { id: number; ticket_id: number; client_name: string; se
 
 function NewClientMessageNotifier({ token }: { token: string }) {
   const seenRef = useRef<Set<number> | null>(null);
+  const sigRef = useRef<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
@@ -4350,7 +4356,11 @@ function NewClientMessageNotifier({ token }: { token: string }) {
     let cancelled = false;
 
     const check = async () => {
-      const data = await sharedFetchJson(`${TICKETS_URL}?resource=client-messages`, { 'X-Admin-Token': token }, 20000) as ClientMessageRow[] | null;
+      const pulse = await getPulse(TICKETS_URL, token);
+      if (cancelled || !pulse) return;
+      if (seenRef.current !== null && pulse.client_msg_max === sigRef.current) return;
+      const data = await sharedFetchJson(`${TICKETS_URL}?resource=client-messages`, { 'X-Admin-Token': token }, 5000, true) as ClientMessageRow[] | null;
+      if (!cancelled) sigRef.current = pulse.client_msg_max;
       if (cancelled || !Array.isArray(data)) return;
 
       const ids = new Set<number>(data.map((m: ClientMessageRow) => m.id));
@@ -4440,9 +4450,9 @@ export default function WorkPanel() {
     if (!authed) return;
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return;
-    const data = await sharedFetchJson(`${TICKETS_URL}?resource=tickets`, { 'X-Admin-Token': token }, 20000, force) as Ticket[] | null;
-    if (!Array.isArray(data)) return;
-    setUnreadTickets(data.filter((t: Ticket) => (t.unread_count || 0) > 0).length);
+    const pulse = await getPulse(TICKETS_URL, token, force);
+    if (!pulse) return;
+    setUnreadTickets(Number(pulse.unread_tickets) || 0);
   };
   useEffect(() => {
     if (!authed) return;
