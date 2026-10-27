@@ -376,39 +376,23 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
           continue;
         }
         const contentType = file.type || 'application/octet-stream';
-        let done = false;
-        try {
-          const pre = await api('resource=files&action=presign', 'POST', {
-            credential_id: credentialId, file_name: file.name, content_type: contentType,
+        const CHUNK = 1024 * 1024;
+        const total = Math.max(1, Math.ceil(file.size / CHUNK));
+        const uploadId = Array.from(crypto.getRandomValues(new Uint8Array(16))).map(b => b.toString(16).padStart(2, '0')).join('');
+        let failed = false;
+        for (let idx = 0; idx < total; idx++) {
+          const data: string = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(file.slice(idx * CHUNK, (idx + 1) * CHUNK));
           });
-          if (pre?.upload_url) {
-            const put = await fetch(pre.upload_url, { method: 'PUT', headers: { 'Content-Type': contentType }, body: file });
-            if (put.ok) {
-              const reg = await api('resource=files&action=register', 'POST', {
-                credential_id: credentialId, key: pre.key, file_name: file.name, content_type: contentType,
-              });
-              done = !!reg?.id;
-            }
-          }
-        } catch {
-          done = false;
+          const r = await api('resource=files&action=chunk', 'POST', { credential_id: credentialId, upload_id: uploadId, index: idx, data });
+          if (!r || r.error) { failed = true; toast.error(r?.error || `Не удалось загрузить «${file.name}»`); break; }
         }
-        if (done) continue;
-        if (file.size > 4 * 1024 * 1024) {
-          toast.error(`Не удалось загрузить «${file.name}»: прямая загрузка недоступна, а файл слишком большой для обычной`);
-          continue;
-        }
-        const data: string = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        const res = await api('resource=files', 'POST', {
-          credential_id: credentialId,
-          file_name: file.name,
-          content_type: contentType,
-          data,
+        if (failed) continue;
+        const res = await api('resource=files&action=complete', 'POST', {
+          credential_id: credentialId, upload_id: uploadId, total, file_name: file.name, content_type: contentType,
         });
         if (!res || res.error || !res.id) {
           toast.error(res?.error || `Не удалось загрузить «${file.name}»`);

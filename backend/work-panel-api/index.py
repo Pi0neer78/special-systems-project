@@ -430,6 +430,46 @@ def handler(event: dict, context) -> dict:
                     FROM {SCHEMA}.credential_files WHERE credential_id=%s ORDER BY created_at DESC
                 """, [credential_id])
                 return ok([dict(r) for r in cur.fetchall()])
+            if method == 'POST' and qs.get('action') == 'chunk':
+                credential_id = int(body.get('credential_id') or 0)
+                upload_id = str(body.get('upload_id', ''))
+                index = int(body.get('index', 0))
+                if not credential_id or not re.fullmatch(r'[0-9a-f]{32}', upload_id) or index < 0 or index > 40:
+                    return err('invalid chunk')
+                raw = base64.b64decode(body.get('data', '').split(',')[-1])
+                get_s3().put_object(Bucket=S3_BUCKET, Key=f"tmp/{upload_id}/{index:03d}", Body=raw)
+                return ok({'index': index})
+            if method == 'POST' and qs.get('action') == 'complete':
+                credential_id = int(body.get('credential_id') or 0)
+                upload_id = str(body.get('upload_id', ''))
+                total = int(body.get('total', 0))
+                file_name = body.get('file_name', 'file')
+                content_type = body.get('content_type', 'application/octet-stream')
+                if not credential_id or not re.fullmatch(r'[0-9a-f]{32}', upload_id) or total < 1 or total > 41:
+                    return err('invalid complete')
+                s3 = get_s3()
+                parts = []
+                for i in range(total):
+                    parts.append(s3.get_object(Bucket=S3_BUCKET, Key=f"tmp/{upload_id}/{i:03d}")['Body'].read())
+                raw = b''.join(parts)
+                ext = ''
+                if '.' in file_name:
+                    ext = '.' + file_name.rsplit('.', 1)[-1]
+                file_id = uuid.uuid4().hex
+                key = f"credentials/{credential_id}/{file_id}{ext}"
+                s3.put_object(Bucket=S3_BUCKET, Key=key, Body=raw, ContentType=content_type)
+                for i in range(total):
+                    try:
+                        s3.delete_object(Bucket=S3_BUCKET, Key=f"tmp/{upload_id}/{i:03d}")
+                    except Exception:
+                        pass
+                cur.execute(f"""
+                    INSERT INTO {SCHEMA}.credential_files (credential_id, file_name, file_url, file_size, content_type)
+                    VALUES (%s,%s,%s,%s,%s)
+                    RETURNING id, credential_id, file_name, file_url, file_size, content_type, created_at, description
+                """, (credential_id, file_name, cdn_url(key), len(raw), content_type))
+                conn.commit()
+                return ok(dict(cur.fetchone()))
             if method == 'POST' and qs.get('action') == 'presign':
                 credential_id = body.get('credential_id')
                 file_name = body.get('file_name', 'file')
