@@ -4089,13 +4089,23 @@ function TaskReminder({ token, userId }: { token: string; userId: number }) {
   }, []);
 
   const checkRef = useRef<() => void | Promise<void>>(() => {});
+  const cacheRef = useRef<Task[] | null>(null);
+  const sigRef = useRef<string | null>(null);
   useEffect(() => {
     let cancelled = false;
 
     const check = async () => {
-      const params = new URLSearchParams({ resource: 'tasks', status: 'new,in_progress' });
-      const data = await fetch(`${TASKS_URL}?${params}`, { headers: { 'X-Admin-Token': token } }).then(r => r.json()).catch(() => null);
-      if (cancelled || !Array.isArray(data)) return;
+      const pulse = await sharedFetchJson(`${TASKS_URL}?resource=tasks-pulse`, { 'X-Admin-Token': token }, 20000) as { count: number; sig: string } | null;
+      if (cancelled || !pulse) return;
+      let data = cacheRef.current;
+      if (data === null || pulse.sig !== sigRef.current) {
+        const params = new URLSearchParams({ resource: 'tasks', status: 'new,in_progress' });
+        const fresh = await fetch(`${TASKS_URL}?${params}`, { headers: { 'X-Admin-Token': token } }).then(r => r.json()).catch(() => null);
+        if (cancelled || !Array.isArray(fresh)) return;
+        cacheRef.current = fresh;
+        sigRef.current = pulse.sig;
+        data = fresh;
+      }
 
       const now = Date.now();
       const due: Task[] = data.filter((t: Task) => {

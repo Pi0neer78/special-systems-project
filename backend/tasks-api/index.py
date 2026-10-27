@@ -186,6 +186,19 @@ def handler(event: dict, context) -> dict:
             return ok({'ok': True, 'archived': len(archived_ids)})
 
         # ── TASKS ──────────────────────────────────────────────────────────────
+        if resource == 'tasks-pulse' and method == 'GET':
+            uid = caller['user_id']
+            cur.execute(f"""
+                SELECT COUNT(*) AS cnt,
+                       COALESCE(md5(string_agg(t.id::text || '|' || t.status || '|' || COALESCE(t.due_date::text, '') || '|' || COALESCE(t.due_time::text, '')
+                                               || '|' || COALESCE(t.assignee_id::text, ''), ',' ORDER BY t.id)), '') AS sig
+                FROM {SCHEMA}.tasks t
+                WHERE t.is_archived = FALSE AND t.status IN ('new','in_progress') AND t.due_date IS NOT NULL
+                  AND (t.assignee_id = %s OR t.id IN (SELECT task_id FROM {SCHEMA}.task_watchers WHERE user_id = %s))
+            """, [uid, uid])
+            row = cur.fetchone()
+            return ok({'count': row['cnt'], 'sig': row['sig']})
+
         if resource == 'tasks':
             if not rid:
                 if method == 'GET':

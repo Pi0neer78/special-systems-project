@@ -6,6 +6,13 @@
       "path": "/?resource=tasks",
       "expectedStatus": 401,
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Tasks pulse без токена",
+      "method": "GET",
+      "path": "/?resource=tasks-pulse",
+      "expectedStatus": 401,
+      "bodyMatcher": "partial"
     }
   ]
 }
