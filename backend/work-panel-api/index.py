@@ -553,10 +553,10 @@ def handler(event: dict, context) -> dict:
                 finally:
                     ftp_close(f)
                 cur.execute(f"""
-                    INSERT INTO {SCHEMA}.credential_files (credential_id, file_name, file_url, file_size, content_type, storage)
-                    VALUES (%s,%s,%s,%s,%s,'ftp')
+                    INSERT INTO {SCHEMA}.credential_files (credential_id, file_name, file_url, file_size, content_type, storage, description)
+                    VALUES (%s,%s,%s,%s,%s,'ftp',%s)
                     RETURNING id, credential_id, file_name, file_url, file_size, content_type, created_at, description
-                """, (credential_id, file_name, f"ftp://{remote}", size, content_type))
+                """, (credential_id, file_name, f"ftp://{remote}", size, content_type, f"ID: {file_id}"))
                 conn.commit()
                 return ok(dict(cur.fetchone()))
             if method == 'POST' and qs.get('action') == 'chunk':
