@@ -371,8 +371,8 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
     setUploading(true);
     try {
       for (const file of Array.from(list)) {
-        if (file.size > 4 * 1024 * 1024) {
-          toast.error(`Файл «${file.name}» больше 4 МБ — загрузка невозможна`);
+        if (file.size > 20 * 1024 * 1024) {
+          toast.error(`Файл «${file.name}» больше 20 МБ — загрузка невозможна`);
           continue;
         }
         const data: string = await new Promise((resolve, reject) => {
