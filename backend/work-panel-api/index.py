@@ -1,6 +1,7 @@
 import json
 import re
-import paramiko
+import ftplib
+import io
 import os
 import hashlib
 import hmac
@@ -34,10 +35,34 @@ FTP_DIR = 'ftp_files'
 FTP_CHUNK = 1024 * 1024
 
 
-def sftp_open():
-    t = paramiko.Transport((os.environ['FTP_HOST'], 22))
-    t.connect(username=os.environ['FTP_USER'], password=os.environ['FTP_PASSWORD'])
-    return paramiko.SFTPClient.from_transport(t), t
+def ftp_open():
+    last = None
+    for _ in range(3):
+        for tls in (True, False):
+            try:
+                f = ftplib.FTP_TLS() if tls else ftplib.FTP()
+                f.connect(os.environ['FTP_HOST'], 21, timeout=15)
+                if tls:
+                    f.auth()
+                f.login(os.environ['FTP_USER'], os.environ['FTP_PASSWORD'])
+                if tls:
+                    f.prot_p()
+                f.voidcmd('TYPE I')
+                return f
+            except Exception as e:
+                last = e
+        time.sleep(0.5)
+    raise last
+
+
+def ftp_close(f):
+    try:
+        f.quit()
+    except Exception:
+        try:
+            f.close()
+        except Exception:
+            pass
 
 
 def ftp_remote_path(file_url: str):
@@ -55,12 +80,11 @@ def delete_ftp_object(file_url: str):
     if not path:
         return
     try:
-        sf, t = sftp_open()
+        f = ftp_open()
         try:
-            sf.remove(path)
+            f.delete(path)
         finally:
-            sf.close()
-            t.close()
+            ftp_close(f)
     except Exception:
         pass
 
@@ -471,15 +495,23 @@ def handler(event: dict, context) -> dict:
                     if not path:
                         return err('Not found', 404)
                     index = max(0, int(qs.get('index', 0)))
-                    sf, t = sftp_open()
+                    f = ftp_open()
                     try:
-                        with sf.open(path, 'rb') as fh:
-                            fh.seek(index * FTP_CHUNK)
-                            chunk = fh.read(FTP_CHUNK)
-                        total_size = sf.stat(path).st_size
+                        total_size = f.size(path)
+                        conn_d = f.transfercmd(f'RETR {path}', rest=index * FTP_CHUNK)
+                        buf = b''
+                        while len(buf) < FTP_CHUNK:
+                            part = conn_d.recv(min(65536, FTP_CHUNK - len(buf)))
+                            if not part:
+                                break
+                            buf += part
+                        chunk = buf
+                        try:
+                            conn_d.close()
+                        except Exception:
+                            pass
                     finally:
-                        sf.close()
-                        t.close()
+                        ftp_close(f)
                     return ok({'data': base64.b64encode(chunk).decode(), 'total_size': total_size, 'chunk': FTP_CHUNK})
                 storage = 'ftp' if qs.get('storage') == 'ftp' else 's3'
                 cur.execute(f"""
@@ -494,13 +526,11 @@ def handler(event: dict, context) -> dict:
                 if not credential_id or not re.fullmatch(r'[0-9a-f]{32}', upload_id) or index < 0 or index > 40:
                     return err('invalid chunk')
                 raw = base64.b64decode(body.get('data', '').split(',')[-1])
-                sf, t = sftp_open()
+                f = ftp_open()
                 try:
-                    with sf.open(f"{FTP_DIR}/.up_{upload_id}", 'wb' if index == 0 else 'ab') as fh:
-                        fh.write(raw)
+                    f.storbinary(f"{'STOR' if index == 0 else 'APPE'} {FTP_DIR}/.up_{upload_id}", io.BytesIO(raw))
                 finally:
-                    sf.close()
-                    t.close()
+                    ftp_close(f)
                 return ok({'index': index})
             if method == 'POST' and qs.get('action') == 'ftp_complete':
                 credential_id = int(body.get('credential_id') or 0)
@@ -516,13 +546,12 @@ def handler(event: dict, context) -> dict:
                         ext = '.' + e
                 file_id = uuid.uuid4().hex
                 remote = f"{FTP_DIR}/{file_id}{ext}"
-                sf, t = sftp_open()
+                f = ftp_open()
                 try:
-                    sf.rename(f"{FTP_DIR}/.up_{upload_id}", remote)
-                    size = sf.stat(remote).st_size
+                    f.rename(f"{FTP_DIR}/.up_{upload_id}", remote)
+                    size = f.size(remote)
                 finally:
-                    sf.close()
-                    t.close()
+                    ftp_close(f)
                 cur.execute(f"""
                     INSERT INTO {SCHEMA}.credential_files (credential_id, file_name, file_url, file_size, content_type, storage)
                     VALUES (%s,%s,%s,%s,%s,'ftp')
