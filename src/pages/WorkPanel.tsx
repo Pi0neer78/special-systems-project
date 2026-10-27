@@ -369,22 +369,34 @@ function CredFilesBlock({ credentialId, onCountChange }: { credentialId: number;
     const list = e.target.files;
     if (!list || list.length === 0) return;
     setUploading(true);
-    for (const file of Array.from(list)) {
-      const data: string = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-      await api('resource=files', 'POST', {
-        credential_id: credentialId,
-        file_name: file.name,
-        content_type: file.type || 'application/octet-stream',
-        data,
-      });
+    try {
+      for (const file of Array.from(list)) {
+        if (file.size > 4 * 1024 * 1024) {
+          toast.error(`Файл «${file.name}» больше 4 МБ — загрузка невозможна`);
+          continue;
+        }
+        const data: string = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        const res = await api('resource=files', 'POST', {
+          credential_id: credentialId,
+          file_name: file.name,
+          content_type: file.type || 'application/octet-stream',
+          data,
+        });
+        if (!res || res.error || !res.id) {
+          toast.error(res?.error || `Не удалось загрузить «${file.name}»`);
+        }
+      }
+    } catch {
+      toast.error('Не удалось загрузить файл. Проверьте соединение и размер файла');
+    } finally {
+      setUploading(false);
+      if (inputRef.current) inputRef.current.value = '';
     }
-    setUploading(false);
-    if (inputRef.current) inputRef.current.value = '';
     load();
   };
 
